@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_bg"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:letterSpacing="0.08"
+        android:text="DAILY SPARK"
+        android:textAllCaps="true"
+        android:textColor="#9A5B2A"
+        android:textSize="11sp" />
+
+    <TextView
+        android:id="@+id/widget_ref"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:textColor="#2C6848"
+        android:textSize="14sp" />
+
+    <TextView
+        android:id="@+id/widget_verse"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:ellipsize="end"
+        android:maxLines="5"
+        android:textColor="#221C16"
+        android:textSize="16sp" />
+</LinearLayout>

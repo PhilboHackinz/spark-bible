@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Spark Bible</string>
+    <string name="widget_name">Daily spark</string>
+    <string name="widget_desc">A short verse on your home screen. Any amount counts.</string>
+    <string name="channel_listen">Listening</string>
+    <string name="channel_remind">Gentle reminders</string>
+</resources>
