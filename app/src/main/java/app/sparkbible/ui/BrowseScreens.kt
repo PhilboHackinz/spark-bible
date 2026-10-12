@@ -446,46 +446,41 @@ private fun VoiceSection(
     }
     Text("Voice", color = palette.muted)
     Text(
-        "The phone's own voice works right away. Open-source voices show up here after you add their engine.",
+        "Tap Hear on a row to try it. The name is the voice. Network and offline copies of the same voice are one row.",
         color = palette.muted,
         modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
     )
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        SelectRow(
+        VoiceRow(
             title = "Phone default",
             body = "Whatever Android is set to use.",
             selected = engine.isBlank() && voice.isBlank(),
-        ) { onPick("", "") }
+            onSelect = { onPick("", "") },
+            onHear = { hear(context, rate, "", "") },
+        )
         if (!snapshot.ready) {
             Text("Looking for voices…", color = palette.muted)
         }
         snapshot.engines.forEach { group ->
             if (group.voices.isEmpty()) return@forEach
             Text(
-                if (group.openSource) "${group.label} · open source" else group.label,
+                if (group.openSource) "${group.label} · open source" else shortEngineLabel(group.label),
                 color = palette.ink,
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.padding(top = 6.dp),
             )
-            group.voices.forEach { item ->
-                SelectRow(
-                    title = item.label.substringBefore(" ·"),
-                    body = item.engineLabel + " · " + item.label.substringAfter(" · ", "On this phone"),
-                    selected = engine == item.engine && voice == item.name,
-                ) { onPick(item.engine, item.name) }
+            group.voices.groupBy { it.accent }.forEach { (accent, voices) ->
+                Text(accent, color = palette.muted, modifier = Modifier.padding(top = 2.dp))
+                voices.forEach { item ->
+                    VoiceRow(
+                        title = item.label,
+                        body = item.detail,
+                        selected = engine == item.engine && (voice == item.name || voice in item.aliases),
+                        onSelect = { onPick(item.engine, item.name) },
+                        onHear = { hear(context, rate, item.engine, item.name) },
+                    )
+                }
             }
-        }
-        PrimaryButton("Hear a line") {
-            ListenService.play(
-                context,
-                listOf("Peace I leave with you. My peace I give to you."),
-                0,
-                rate,
-                false,
-                "Voice sample",
-                engine,
-                voice,
-            )
         }
         Text("Open-source engines", color = palette.ink, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp))
         Text(
@@ -531,6 +526,62 @@ private fun VoiceSection(
             modifier = Modifier
                 .clickable { look += 1 }
                 .padding(vertical = 8.dp),
+        )
+    }
+}
+
+private fun shortEngineLabel(label: String): String =
+    if (label.contains("Google", ignoreCase = true)) "Google" else label
+
+private fun hear(context: android.content.Context, rate: Float, engine: String, voice: String) {
+    ListenService.play(
+        context,
+        listOf("Peace I leave with you. My peace I give to you."),
+        0,
+        rate,
+        false,
+        "Voice sample",
+        engine,
+        voice,
+    )
+}
+
+@Composable
+private fun VoiceRow(
+    title: String,
+    body: String,
+    selected: Boolean,
+    onSelect: () -> Unit,
+    onHear: () -> Unit,
+) {
+    val palette = LocalPalette.current
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(if (selected) palette.sageSoft else palette.surface)
+            .border(1.dp, if (selected) palette.sage else palette.line, RoundedCornerShape(18.dp))
+            .padding(start = 14.dp, top = 8.dp, bottom = 8.dp, end = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(
+            Modifier
+                .weight(1f)
+                .clickable(onClick = onSelect)
+                .padding(vertical = 6.dp),
+        ) {
+            Text(title, fontWeight = FontWeight.SemiBold, color = palette.ink)
+            Text(body, color = palette.muted, modifier = Modifier.padding(top = 2.dp))
+        }
+        Text(
+            "Hear",
+            color = palette.onSage,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier
+                .clip(RoundedCornerShape(14.dp))
+                .background(palette.sage)
+                .clickable(onClick = onHear)
+                .padding(horizontal = 16.dp, vertical = 12.dp),
         )
     }
 }

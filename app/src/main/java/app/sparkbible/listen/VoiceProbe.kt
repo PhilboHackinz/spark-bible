@@ -4,7 +4,6 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.speech.tts.TextToSpeech
-import android.speech.tts.Voice
 import java.util.Locale
 
 data class OpenEngine(
@@ -19,8 +18,11 @@ data class ListedVoice(
     val engineLabel: String,
     val name: String,
     val label: String,
+    val accent: String,
+    val detail: String,
     val openSource: Boolean,
     val local: Boolean,
+    val aliases: List<String> = emptyList(),
 )
 
 data class EngineVoices(
@@ -168,30 +170,121 @@ class VoiceProbe(
 }
 
 private fun englishVoices(tts: TextToSpeech, engine: String, engineLabel: String): List<ListedVoice> {
-    val voices = tts.voices.orEmpty().filter { voice ->
-        val lang = voice.locale?.language ?: return@filter false
-        lang.equals(Locale.ENGLISH.language, true)
+    val raw = tts.voices.orEmpty().mapNotNull { voice ->
+        val locale = voice.locale ?: return@mapNotNull null
+        if (!locale.language.equals(Locale.ENGLISH.language, true)) return@mapNotNull null
+        RawVoice(
+            engine = engine,
+            engineLabel = shortEngine(engineLabel),
+            name = voice.name,
+            language = locale.language,
+            country = locale.country ?: "",
+            network = voice.isNetworkConnectionRequired,
+            quality = voice.quality,
+            openSource = OpenVoices.matches(engine) != null,
+        )
     }
-    return voices
-        .sortedWith(compareByDescending<Voice> { !it.isNetworkConnectionRequired }.thenByDescending { it.quality })
-        .map { voice ->
-            val local = !voice.isNetworkConnectionRequired
-            ListedVoice(
-                engine = engine,
-                engineLabel = engineLabel,
-                name = voice.name,
-                label = prettyVoice(voice, local),
-                openSource = OpenVoices.matches(engine) != null,
-                local = local,
-            )
-        }
+    return labelVoices(raw)
 }
 
-private fun prettyVoice(voice: Voice, local: Boolean): String {
-    val locale = voice.locale?.displayName ?: "English"
-    val raw = voice.name.substringAfterLast('-').substringBefore('#').replace('_', ' ').trim()
-    val titled = raw.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.US) else it.toString() }
-    val where = if (local) "Stays on this phone" else "Needs a connection"
-    val name = if (titled.length in 3..28 && titled.any { it.isLetter() } && !titled.startsWith("en", true)) titled else locale
-    return "$name · $where"
+data class RawVoice(
+    val engine: String,
+    val engineLabel: String,
+    val name: String,
+    val language: String,
+    val country: String,
+    val network: Boolean,
+    val quality: Int,
+    val openSource: Boolean,
+)
+
+private data class VoiceName(val accent: String, val label: String)
+
+private val knownVoices = mapOf(
+    "en-us-x-tpc" to VoiceName("US English", "Female 1"),
+    "en-us-x-iob" to VoiceName("US English", "Female 2"),
+    "en-us-x-iog" to VoiceName("US English", "Female 3"),
+    "en-us-x-tpf" to VoiceName("US English", "Female 4"),
+    "en-us-x-sfg" to VoiceName("US English", "Female 5"),
+    "en-us-x-iom" to VoiceName("US English", "Male 1"),
+    "en-us-x-iol" to VoiceName("US English", "Male 2"),
+    "en-us-x-tpd" to VoiceName("US English", "Male 3"),
+    "en-us-language" to VoiceName("US English", "Default"),
+    "en-gb-x-gba" to VoiceName("British English", "Female 1"),
+    "en-gb-x-gbc" to VoiceName("British English", "Female 2"),
+    "en-gb-x-gbg" to VoiceName("British English", "Female 3"),
+    "en-gb-x-rjs" to VoiceName("British English", "Male 1"),
+    "en-gb-x-gbb" to VoiceName("British English", "Male 2"),
+    "en-gb-x-gbd" to VoiceName("British English", "Male 3"),
+    "en-au-x-aua" to VoiceName("Australian English", "Female 1"),
+    "en-au-x-auc" to VoiceName("Australian English", "Female 2"),
+    "en-au-x-aub" to VoiceName("Australian English", "Male 1"),
+    "en-au-x-aud" to VoiceName("Australian English", "Male 2"),
+    "en-in-x-ena" to VoiceName("Indian English", "Female 1"),
+    "en-in-x-enc" to VoiceName("Indian English", "Female 2"),
+    "en-in-x-end" to VoiceName("Indian English", "Male 1"),
+    "en-in-x-ene" to VoiceName("Indian English", "Male 2"),
+)
+
+fun labelVoices(raw: List<RawVoice>): List<ListedVoice> {
+    val collapsed = raw.groupBy { voiceIdentity(it.name) }.map { (identity, variants) ->
+        val offline = variants.filter { !it.network }
+        val chosen = (offline.ifEmpty { variants }).maxBy { it.quality }
+        val known = knownVoices[identity]
+        val named = readableToken(identity)
+        ListedVoice(
+            engine = chosen.engine,
+            engineLabel = chosen.engineLabel,
+            name = chosen.name,
+            label = known?.label ?: named ?: "Voice",
+            accent = known?.accent ?: accentName(chosen.country, chosen.language),
+            detail = if (!chosen.network) "On this phone" else "Needs a connection",
+            openSource = chosen.openSource,
+            local = !chosen.network,
+            aliases = variants.map { it.name }.distinct(),
+        )
+    }
+    return collapsed.sortedWith(
+        compareBy<ListedVoice> { accentOrder(it.accent) }
+            .thenBy { it.label.substringBefore(" ") }
+            .thenBy { it.label.substringAfter(" ").toIntOrNull() ?: 99 }
+            .thenBy { it.label },
+    )
+}
+
+private fun voiceIdentity(name: String): String =
+    name.lowercase(Locale.US).removeSuffix("-local").removeSuffix("-network")
+
+private fun shortEngine(label: String): String =
+    if (label.contains("Google", ignoreCase = true)) "Google" else label
+
+private fun readableToken(identity: String): String? {
+    val token = identity.substringAfterLast('-').replace('_', ' ').trim()
+    val skip = token.length !in 3..24 ||
+        !token.any { it.isLetter() } ||
+        token.startsWith("en") ||
+        token in setOf("local", "network", "eng", "english", "language", "default")
+    if (skip) return null
+    return token.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.US) else it.toString() }
+}
+
+private fun accentName(country: String, language: String): String = when (country.uppercase(Locale.US)) {
+    "US" -> "US English"
+    "GB" -> "British English"
+    "AU" -> "Australian English"
+    "IN" -> "Indian English"
+    "IE" -> "Irish English"
+    "ZA" -> "South African English"
+    "NG" -> "Nigerian English"
+    "CA" -> "Canadian English"
+    "" -> "English"
+    else -> Locale(language, country).displayName
+}
+
+private fun accentOrder(accent: String): Int = when (accent) {
+    "US English" -> 0
+    "British English" -> 1
+    "Australian English" -> 2
+    "Indian English" -> 3
+    else -> 4
 }
