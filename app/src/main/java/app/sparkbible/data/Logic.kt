@@ -2,6 +2,10 @@ package app.sparkbible.data
 
 import java.time.LocalDate
 
+data class SessionShape(val count: Int, val spill: Boolean, val truncated: Boolean)
+
+data class KeptProgress(val trail: VersePin, val sparkDoneOn: String)
+
 object Logic {
     val wins = listOf(
         "That counted.",
@@ -145,7 +149,37 @@ object Logic {
         }
     }
 
-    fun take(store: BibleStore, start: VersePin, count: Int, spill: Boolean): List<PassageVerse> {
+    fun sessionShape(energy: Energy, remainingInChapter: Int): SessionShape = when (energy) {
+        Energy.LOW -> SessionShape(1, spill = false, truncated = false)
+        Energy.MEDIUM -> SessionShape(8, spill = true, truncated = false)
+        Energy.HIGH -> SessionShape(
+            remainingInChapter.coerceAtMost(24),
+            spill = false,
+            truncated = remainingInChapter > 24,
+        )
+    }
+
+    fun plantsAfterShowingUp(existing: Int): Int = existing + 1
+
+    fun progressAfter(
+        origin: String,
+        trail: VersePin,
+        nextOnTrail: VersePin,
+        sparkDoneOn: String,
+        today: String,
+    ): KeptProgress = KeptProgress(
+        trail = if (origin == "trail") nextOnTrail else trail,
+        sparkDoneOn = if (origin == "daily") today else sparkDoneOn,
+    )
+
+    fun weekLine(count: Int, aim: Int): String = when {
+        count == 0 -> "Nothing yet this week. That's a fine place to start."
+        count < aim -> "$count of $aim — a soft aim, not a debt."
+        count == aim -> "$count moments. You met a soft aim. Extra is optional."
+        else -> "$count moments. More than the aim, and the aim was never a test."
+    }
+
+    fun take(loadBook: (Int) -> List<List<String>>, start: VersePin, count: Int, spill: Boolean): List<PassageVerse> {
         val order = plan()
         var book = start.book
         var chapter = start.chapter
@@ -154,7 +188,7 @@ object Logic {
         var guard = 0
         while (out.size < count && guard < 4000) {
             guard++
-            val data = store.loadBook(book)
+            val data = loadBook(book)
             if (chapter > data.size) {
                 if (!spill || out.isNotEmpty() && !spill) break
                 if (!spill) break
@@ -178,8 +212,8 @@ object Logic {
         return out
     }
 
-    fun nextAfter(store: BibleStore, last: VersePin): VersePin {
-        val data = store.loadBook(last.book)
+    fun nextAfter(loadBook: (Int) -> List<List<String>>, last: VersePin): VersePin {
+        val data = loadBook(last.book)
         val len = data.getOrNull(last.chapter - 1)?.size ?: 1
         if (last.verse < len) return last.copy(verse = last.verse + 1)
         if (last.chapter < data.size) return VersePin(last.book, last.chapter + 1, 1)

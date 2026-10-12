@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Dao
 import androidx.room.Database
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.PrimaryKey
@@ -12,7 +13,10 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import kotlinx.coroutines.flow.Flow
 
-@Entity(tableName = "moments")
+@Entity(
+    tableName = "moments",
+    indices = [Index("at")],
+)
 data class MomentEntity(
     @PrimaryKey val id: String,
     val at: Long,
@@ -99,14 +103,16 @@ interface SparkDao {
 
 @Database(
     entities = [MomentEntity::class, PlantEntity::class, HighlightEntity::class, ProgressEntity::class],
-    version = 1,
-    exportSchema = false,
+    version = 2,
+    exportSchema = true,
 )
 abstract class SparkDb : RoomDatabase() {
     abstract fun dao(): SparkDao
 
     companion object {
         fun create(context: Context): SparkDb =
-            Room.databaseBuilder(context, SparkDb::class.java, "spark.db").build()
+            Room.databaseBuilder(context, SparkDb::class.java, "spark.db")
+                .addMigrations(*SparkMigrations.ALL)
+                .build()
     }
 }

@@ -39,7 +39,7 @@ class Repository(
         if (spark != null) {
             val start = VersePin(spark.book, spark.chapter, spark.start)
             val count = spark.end - spark.start + 1
-            val verses = Logic.take(bible, start, count, spill = false)
+            val verses = Logic.take({ bible.loadBook(it) }, start, count, spill = false)
             return place(verses, energy, mode, originKey, spark.prompt, truncated = false)
         }
         val start = when (origin) {
@@ -52,28 +52,9 @@ class Repository(
         val verse = start.verse.coerceIn(1, chapterLen)
         val pin = VersePin(start.book, safeChapter, verse)
         val remaining = chapterLen - verse + 1
-        val count: Int
-        val spill: Boolean
-        val truncated: Boolean
-        when (energy) {
-            Energy.LOW -> {
-                count = 1
-                spill = false
-                truncated = false
-            }
-            Energy.MEDIUM -> {
-                count = 8
-                spill = true
-                truncated = false
-            }
-            Energy.HIGH -> {
-                count = remaining.coerceAtMost(24)
-                spill = false
-                truncated = remaining > 24
-            }
-        }
-        val verses = Logic.take(bible, pin, count, spill)
-        return place(verses, energy, mode, originKey, Logic.genericPrompt(verses.first().pin), truncated)
+        val shape = Logic.sessionShape(energy, remaining)
+        val verses = Logic.take({ bible.loadBook(it) }, pin, shape.count, shape.spill)
+        return place(verses, energy, mode, originKey, Logic.genericPrompt(verses.first().pin), shape.truncated)
     }
 
     suspend fun setOpen(place: Place) {
@@ -179,21 +160,22 @@ class Repository(
             MomentEntity(UUID.randomUUID().toString(), now, place.verses.size, place.label, place.energy.name),
         )
         dao.insertPlant(PlantEntity(UUID.randomUUID().toString(), (now % 6).toInt(), now))
-        val trail = if (place.origin == "trail") {
-            Logic.nextAfter(bible, place.verses.last().pin)
-        } else {
-            VersePin(row.trailBook, row.trailChapter, row.trailVerse)
-        }
-        val sparkDone = if (place.origin == "daily") LocalDate.now().toString() else row.sparkDoneOn
+        val kept = Logic.progressAfter(
+            origin = place.origin,
+            trail = VersePin(row.trailBook, row.trailChapter, row.trailVerse),
+            nextOnTrail = Logic.nextAfter({ bible.loadBook(it) }, place.verses.last().pin),
+            sparkDoneOn = row.sparkDoneOn,
+            today = LocalDate.now().toString(),
+        )
         dao.upsertProgress(
             row.copy(
-                trailBook = trail.book,
-                trailChapter = trail.chapter,
-                trailVerse = trail.verse,
+                trailBook = kept.trail.book,
+                trailChapter = kept.trail.chapter,
+                trailVerse = kept.trail.verse,
                 openBook = -1,
                 openCount = 0,
                 openLabel = place.label,
-                sparkDoneOn = sparkDone,
+                sparkDoneOn = kept.sparkDoneOn,
             ),
         )
     }
@@ -202,7 +184,7 @@ class Repository(
         val energy = runCatching { Energy.valueOf(row.openEnergy) }.getOrDefault(Energy.LOW)
         val mode = runCatching { Mode.valueOf(row.openMode) }.getOrDefault(Mode.READ)
         val verses = Logic.take(
-            bible,
+            { bible.loadBook(it) },
             VersePin(row.openBook, row.openChapter, row.openVerse),
             row.openCount,
             spill = true,

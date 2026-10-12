@@ -1,0 +1,13 @@
+Spark Bible includes five public-domain Bible translations:
+
+- World English Bible
+- King James Version
+- American Standard Version
+- Geneva Bible (1599)
+- Douay-Rheims American Edition (1899)
+
+The verse files were prepared from the public-domain texts published by
+midvash/bible-data (https://github.com/midvash/bible-data).
+
+These scripture texts are not covered by the app's code license.
+They are free to use in the United States.

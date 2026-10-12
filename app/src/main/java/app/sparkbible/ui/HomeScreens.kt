@@ -260,12 +260,7 @@ fun WeekBlock(moments: List<MomentEntity>, aim: Int) {
         val day = Instant.ofEpochMilli(moment.at).atZone(ZoneId.systemDefault()).toLocalDate()
         !day.isBefore(monday) && !day.isAfter(monday.plusDays(6))
     }
-    val line = when {
-        count == 0 -> "Nothing yet this week. That's a fine place to start."
-        count < aim -> "$count of $aim — a soft aim, not a debt."
-        count == aim -> "$count moments. You met a soft aim. Extra is optional."
-        else -> "$count moments. More than the aim, and the aim was never a test."
-    }
+    val line = Logic.weekLine(count, aim)
     SoftCard {
         Text("This week", color = palette.ember, fontSize = 12.sp)
         Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.SpaceBetween) {

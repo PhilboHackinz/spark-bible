@@ -1,0 +1,13 @@
+Spark Bible
+Copyright (c) 2026 PhilboHackinz
+
+The Kotlin app is under the MIT License. See LICENSE.
+
+Scripture
+The five bundled translations are public domain. Credits and sources are in
+app/src/main/assets/licenses/scripture.txt.
+
+Fonts
+Literata, Fraunces, and Lexend are under the SIL Open Font License 1.1.
+Copyright lines and the license text ship with the app in
+app/src/main/assets/licenses/.

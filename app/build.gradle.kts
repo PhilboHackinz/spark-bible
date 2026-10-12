@@ -13,8 +13,8 @@ android {
         applicationId = "app.sparkbible"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "1.1.0"
+        versionCode = 3
+        versionName = "1.2.0"
     }
 
     val storePath = System.getenv("SPARK_STORE_FILE")
@@ -51,11 +51,6 @@ android {
         compose = true
     }
 
-    lint {
-        checkReleaseBuilds = false
-        abortOnError = false
-    }
-
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -83,4 +78,9 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("androidx.work:work-runtime-ktx:2.10.0")
     implementation("androidx.media:media:1.7.0")
+    testImplementation("junit:junit:4.13.2")
+}
+
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
 }
