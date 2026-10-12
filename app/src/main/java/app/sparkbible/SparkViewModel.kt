@@ -1,6 +1,11 @@
 package app.sparkbible
 
 import android.app.Application
+import android.net.Uri
+import android.os.Build
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import app.sparkbible.data.Energy
@@ -45,6 +50,7 @@ class SparkViewModel(app: Application) : AndroidViewModel(app) {
     val draft = MutableStateFlow<Place?>(null)
     val busy = MutableStateFlow(false)
     val error = MutableStateFlow<String?>(null)
+    val copyNote = MutableStateFlow("")
 
     val settings = spark.settings.flow.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), Settings())
     val moments = spark.repo.moments().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -110,6 +116,23 @@ class SparkViewModel(app: Application) : AndroidViewModel(app) {
 
     fun openDaily() = openSetup(Energy.LOW, Origin.Daily)
 
+    fun openDailyRead() {
+        viewModelScope.launch {
+            busy.value = true
+            error.value = null
+            try {
+                val trail = progress.value.let { VersePin(it.trailBook, it.trailChapter, it.trailVerse) }
+                val place = withContext(Dispatchers.IO) { spark.repo.build(Origin.Daily, Energy.LOW, Mode.READ, trail) }
+                withContext(Dispatchers.IO) { spark.repo.setOpen(place) }
+                _stack.value = listOf(Screen.Today, Screen.Read(place))
+            } catch (_: Exception) {
+                error.value = "Couldn't open today's spark."
+            } finally {
+                busy.value = false
+            }
+        }
+    }
+
     fun setEnergy(energy: Energy) {
         val setup = _stack.value.lastOrNull() as? Screen.Setup ?: return
         if (setup.energy == energy) return
@@ -148,8 +171,9 @@ class SparkViewModel(app: Application) : AndroidViewModel(app) {
 
     fun finish(place: Place) {
         viewModelScope.launch {
+            val planted = spark.repo.complete(place)
             ListenService.stop(spark)
-            spark.repo.complete(place)
+            if (planted) gentleTap()
             showReflect(place)
         }
     }
@@ -188,6 +212,41 @@ class SparkViewModel(app: Application) : AndroidViewModel(app) {
             }
             SparkWidget.refresh(spark)
         }
+    }
+
+    fun saveCopy(uri: Uri) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val ok = runCatching {
+                val json = spark.repo.exportJson()
+                spark.contentResolver.openOutputStream(uri)?.use { it.write(json.toByteArray()) } != null
+            }.getOrDefault(false)
+            copyNote.value = if (ok) {
+                "Saved. Your garden and highlights are in that file."
+            } else {
+                "Couldn't write that file."
+            }
+        }
+    }
+
+    fun bringCopyBack(uri: Uri) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val ok = runCatching {
+                val text = spark.contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) }
+                text != null && spark.repo.importJson(text)
+            }.getOrDefault(false)
+            copyNote.value = if (ok) "Brought back. Your garden is here again." else "That file wasn't a Spark Bible copy."
+        }
+    }
+
+    private fun gentleTap() {
+        val vibrator = if (Build.VERSION.SDK_INT >= 31) {
+            (spark.getSystemService(VibratorManager::class.java))?.defaultVibrator
+        } else {
+            @Suppress("DEPRECATION")
+            spark.getSystemService(Vibrator::class.java)
+        } ?: return
+        if (!vibrator.hasVibrator()) return
+        vibrator.vibrate(VibrationEffect.createOneShot(18, 40))
     }
 
     fun updateSettings(block: (Settings) -> Settings) {

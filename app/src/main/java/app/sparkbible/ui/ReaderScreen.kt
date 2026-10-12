@@ -1,5 +1,8 @@
 package app.sparkbible.ui
 
+import android.app.Activity
+import android.content.Intent
+import android.view.WindowManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -31,6 +34,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -40,6 +44,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -74,6 +80,7 @@ fun ReaderScreen(vm: SparkViewModel, place: Place) {
     val counted by ListenBus.counted.collectAsStateWithLifecycle()
     val listState = rememberLazyListState()
     var tools by rememberSaveable { mutableStateOf(false) }
+    var sleepMinutes by rememberSaveable { mutableIntStateOf(0) }
     var started by rememberSaveable(place.label) { mutableStateOf(false) }
     val active = title == place.label
     val style = readingStyle(settings)
@@ -90,6 +97,7 @@ fun ReaderScreen(vm: SparkViewModel, place: Place) {
                 place.label,
                 settings.voiceEngine,
                 settings.voiceName,
+                sleepMinutes,
             )
         }
     }
@@ -104,6 +112,12 @@ fun ReaderScreen(vm: SparkViewModel, place: Place) {
         if (active && playing) {
             listState.animateScrollToItem(spokenVerse.coerceIn(0, place.verses.lastIndex))
         }
+    }
+
+    DisposableEffect(Unit) {
+        val window = (context as? Activity)?.window
+        window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        onDispose { window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
     }
 
     Column(Modifier.fillMaxSize()) {
@@ -159,6 +173,15 @@ fun ReaderScreen(vm: SparkViewModel, place: Place) {
                     highlightWord = if (active && index == spokenVerse) spokenWord else -1,
                     onToggle = { vm.toggleHighlight(verse) },
                     onNote = { vm.saveNote(verse, it) },
+                    onShare = {
+                        val book = vm.books.value.getOrNull(verse.pin.book)?.name ?: "Verse"
+                        val ref = "$book ${verse.pin.chapter}:${verse.pin.verse}"
+                        val send = Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(Intent.EXTRA_TEXT, "$ref\n\n${verse.text}")
+                        }
+                        context.startActivity(Intent.createChooser(send, "Share this verse"))
+                    },
                 )
             }
             item { Text("Tap a verse number to keep it. Only if you want to.", color = palette.muted) }
@@ -210,6 +233,28 @@ fun ReaderScreen(vm: SparkViewModel, place: Place) {
                         .padding(12.dp),
                 )
                 Spacer(Modifier.weight(1f))
+                Text(
+                    if (sleepMinutes == 0) "Sleep" else "Sleep ${sleepMinutes}m",
+                    color = palette.sage,
+                    modifier = Modifier
+                        .semantics {
+                            contentDescription = if (sleepMinutes == 0) {
+                                "Sleep timer off. Tap to stop listening after 10 minutes."
+                            } else {
+                                "Sleep timer, $sleepMinutes minutes. Tap to change it."
+                            }
+                        }
+                        .clickable {
+                            sleepMinutes = when (sleepMinutes) {
+                                0 -> 10
+                                10 -> 20
+                                20 -> 40
+                                else -> 0
+                            }
+                            if (playing && active) ListenService.sleep(context, sleepMinutes)
+                        }
+                        .padding(12.dp),
+                )
                 val isPlaying = playing && active
                 IconButton(onClick = {
                     if (isPlaying) ListenService.toggle(context)
@@ -222,6 +267,7 @@ fun ReaderScreen(vm: SparkViewModel, place: Place) {
                         place.label,
                         settings.voiceEngine,
                         settings.voiceName,
+                        sleepMinutes,
                     )
                 }) {
                     Icon(
@@ -267,6 +313,7 @@ private fun VerseBlock(
     highlightWord: Int,
     onToggle: () -> Unit,
     onNote: (String) -> Unit,
+    onShare: () -> Unit,
 ) {
     val palette = LocalPalette.current
     var draft by remember(verse.pin, note) { mutableStateOf(note) }
@@ -279,7 +326,8 @@ private fun VerseBlock(
                 modifier = Modifier
                     .background(if (kept) palette.sage else palette.sageSoft, RoundedCornerShape(14.dp))
                     .clickable { onToggle() }
-                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                    .padding(horizontal = 12.dp, vertical = 10.dp)
+                    .semantics { contentDescription = "Verse ${verse.pin.verse}. Tap to keep it." },
             )
             val words = verse.text.split(Regex("\\s+"))
             FlowRow(
@@ -302,6 +350,14 @@ private fun VerseBlock(
                 }
             }
         }
+        Text(
+            "Share",
+            color = palette.sage,
+            modifier = Modifier
+                .semantics { contentDescription = "Share this verse and its reference" }
+                .clickable(onClick = onShare)
+                .padding(vertical = 2.dp),
+        )
         if (kept) {
             BasicTextField(
                 value = draft,

@@ -25,6 +25,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import kotlin.math.sin
 import kotlinx.coroutines.isActive
@@ -115,7 +117,14 @@ private fun GardenBed(plants: List<PlantEntity>) {
             .fillMaxWidth()
             .height(300.dp)
             .clip(RoundedCornerShape(28.dp))
-            .background(palette.sageSoft),
+            .background(palette.sageSoft)
+            .semantics {
+                contentDescription = if (plants.isEmpty()) {
+                    "Garden bed. Nothing planted yet."
+                } else {
+                    "Garden bed. ${plants.size} plant${if (plants.size == 1) "" else "s"} sprouting and blooming."
+                }
+            },
     ) {
         val soil = size.height * 0.74f
         drawRect(
@@ -199,7 +208,8 @@ private fun Constellation(plants: List<PlantEntity>) {
             .fillMaxWidth()
             .height(300.dp)
             .clip(RoundedCornerShape(28.dp))
-            .background(palette.sky),
+            .background(palette.sky)
+            .semantics { contentDescription = "Night sky. ${skyCaption(plants.size)}" },
     ) {
         val picture = skyPicture(plants.size, size.width, size.height)
         val pulse = 1f + 0.22f * sin(frame / 1_000_000_000f * 2.4f)

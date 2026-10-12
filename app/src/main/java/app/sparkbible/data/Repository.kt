@@ -1,5 +1,6 @@
 package app.sparkbible.data
 
+import androidx.room.withTransaction
 import java.time.LocalDate
 import java.util.UUID
 
@@ -150,6 +151,30 @@ class Repository(
                 created = existing?.created ?: System.currentTimeMillis(),
             ),
         )
+    }
+
+    suspend fun exportJson(): String {
+        val copy = KeptCopy(
+            moments = dao.momentsOnce(),
+            plants = dao.plantsOnce(),
+            highlights = dao.highlightsOnce(),
+            progress = dao.progressOnce(),
+        )
+        return Keeper.encode(copy)
+    }
+
+    suspend fun importJson(text: String): Boolean {
+        val copy = Keeper.decode(text) ?: return false
+        db.withTransaction {
+            dao.clearMoments()
+            dao.clearPlants()
+            dao.clearHighlights()
+            if (copy.moments.isNotEmpty()) dao.insertMoments(copy.moments)
+            if (copy.plants.isNotEmpty()) dao.insertPlants(copy.plants)
+            if (copy.highlights.isNotEmpty()) dao.insertHighlights(copy.highlights)
+            copy.progress?.let { dao.upsertProgress(it.copy(id = 1)) }
+        }
+        return true
     }
 
     suspend fun deleteHighlight(id: String) = dao.deleteHighlight(id)

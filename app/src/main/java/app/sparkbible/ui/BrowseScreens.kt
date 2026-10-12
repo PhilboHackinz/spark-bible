@@ -41,6 +41,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -58,6 +60,7 @@ import app.sparkbible.listen.ListenService
 import app.sparkbible.listen.OpenVoices
 import app.sparkbible.listen.VoiceProbe
 import app.sparkbible.listen.VoiceSnapshot
+import app.sparkbible.listen.phoneOnline
 import app.sparkbible.widget.SparkWidget
 
 @Composable
@@ -311,7 +314,14 @@ fun SettingsScreen(vm: SparkViewModel) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val palette = LocalPalette.current
     val context = LocalContext.current
+    val note by vm.copyNote.collectAsStateWithLifecycle()
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    val saveCopy = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        if (uri != null) vm.saveCopy(uri)
+    }
+    val bringCopy = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) vm.bringCopyBack(uri)
+    }
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
             Text("Back", color = palette.sage, modifier = Modifier.clickable { vm.back() }.padding(top = 14.dp))
@@ -412,6 +422,34 @@ fun SettingsScreen(vm: SparkViewModel) {
             Text("Reminders never scold you for a missed day.", color = palette.muted)
         }
         item {
+            Text("A copy of this phone", color = palette.muted)
+            Text(
+                "Save your garden, highlights, and place to a file. Bringing one back replaces what's here. No account.",
+                color = palette.muted,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.padding(top = 6.dp)) {
+                Text(
+                    "Save a copy",
+                    color = palette.sage,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier
+                        .semantics { contentDescription = "Save a copy of your garden and highlights" }
+                        .clickable { saveCopy.launch("spark-bible-copy.json") }
+                        .padding(vertical = 8.dp),
+                )
+                Text(
+                    "Bring a copy back",
+                    color = palette.sage,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier
+                        .semantics { contentDescription = "Bring a saved copy back onto this phone" }
+                        .clickable { bringCopy.launch(arrayOf("application/json", "text/*", "*/*")) }
+                        .padding(vertical = 8.dp),
+                )
+            }
+            if (note.isNotBlank()) Text(note, color = palette.ink)
+        }
+        item {
             PrimaryButton("Add home screen spark") {
                 val manager = AppWidgetManager.getInstance(context)
                 val component = ComponentName(context, SparkWidget::class.java)
@@ -461,15 +499,19 @@ private fun VoiceSection(
         if (!snapshot.ready) {
             Text("Looking for voices…", color = palette.muted)
         }
+        val online = snapshot.ready && phoneOnline(context)
+        var hidden = 0
         snapshot.engines.forEach { group ->
-            if (group.voices.isEmpty()) return@forEach
+            val shown = if (online) group.voices else group.voices.filter { it.local }
+            hidden += group.voices.size - shown.size
+            if (shown.isEmpty()) return@forEach
             Text(
                 if (group.openSource) "${group.label} · open source" else shortEngineLabel(group.label),
                 color = palette.ink,
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.padding(top = 6.dp),
             )
-            group.voices.groupBy { it.accent }.forEach { (accent, voices) ->
+            shown.groupBy { it.accent }.forEach { (accent, voices) ->
                 Text(accent, color = palette.muted, modifier = Modifier.padding(top = 2.dp))
                 voices.forEach { item ->
                     VoiceRow(
@@ -481,6 +523,9 @@ private fun VoiceSection(
                     )
                 }
             }
+        }
+        if (hidden > 0) {
+            Text("More voices when you're online.", color = palette.muted, modifier = Modifier.padding(top = 4.dp))
         }
         Text("Open-source engines", color = palette.ink, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp))
         Text(
@@ -578,6 +623,7 @@ private fun VoiceRow(
             color = palette.onSage,
             fontWeight = FontWeight.SemiBold,
             modifier = Modifier
+                .semantics { contentDescription = "Hear $title" }
                 .clip(RoundedCornerShape(14.dp))
                 .background(palette.sage)
                 .clickable(onClick = onHear)

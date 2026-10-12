@@ -10,4 +10,5 @@ object ListenBus {
     val title = MutableStateFlow("")
     val error = MutableStateFlow(false)
     val counted = MutableStateFlow("")
+    val sleepMinutes = MutableStateFlow(0)
 }

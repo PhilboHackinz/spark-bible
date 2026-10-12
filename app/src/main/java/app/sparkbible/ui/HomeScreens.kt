@@ -19,9 +19,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -97,10 +102,23 @@ fun TodayScreen(vm: SparkViewModel) {
                 PrimaryButton("Return to it", Modifier.padding(top = 12.dp)) { vm.resume() }
             }
         }
+        var moreFocus by rememberSaveable { mutableStateOf(false) }
         Text("How's your focus right now?", style = androidx.compose.material3.MaterialTheme.typography.titleMedium)
-        EnergyButton("Scattered", "One verse. About a minute.", Energy.LOW, busy, vm)
-        EnergyButton("Steady", "A short passage. Easy to finish.", Energy.MEDIUM, busy, vm)
-        EnergyButton("Locked in", "A longer stretch, if you want it.", Energy.HIGH, busy, vm)
+        PrimaryButton(if (busy) "Opening…" else "One verse") { vm.openSetup(Energy.LOW, Origin.Trail) }
+        Text("About a minute. Stop whenever.", color = palette.muted)
+        Text(
+            if (moreFocus) "That's plenty" else "A little more",
+            color = palette.sage,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier
+                .semantics { contentDescription = if (moreFocus) "Hide longer sessions" else "Show a short passage or a longer stretch" }
+                .clickable { moreFocus = !moreFocus }
+                .padding(vertical = 4.dp),
+        )
+        if (moreFocus) {
+            EnergyButton("Steady", "A short passage. Easy to finish.", Energy.MEDIUM, busy, vm)
+            EnergyButton("Locked in", "A longer stretch, if you want it.", Energy.HIGH, busy, vm)
+        }
         if (error != null) Text(error ?: "", color = palette.ember)
         SoftCard {
             Text("DAILY SPARK", color = palette.ember, fontSize = 12.sp, letterSpacing = 1.sp)
@@ -135,6 +153,7 @@ private fun EnergyButton(title: String, body: String, energy: Energy, busy: Bool
             .clip(RoundedCornerShape(22.dp))
             .background(palette.surface)
             .border(1.dp, palette.line, RoundedCornerShape(22.dp))
+            .semantics { contentDescription = "$title. $body" }
             .clickable(enabled = !busy) { vm.openSetup(energy, Origin.Trail) }
             .padding(horizontal = 16.dp, vertical = 14.dp),
     ) {

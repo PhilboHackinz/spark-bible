@@ -2,6 +2,8 @@ package app.sparkbible.listen
 
 import android.content.Context
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.net.Uri
 import android.speech.tts.TextToSpeech
 import java.util.Locale
@@ -81,6 +83,13 @@ object OpenVoices {
         val intent = Intent("com.android.settings.TTS_SETTINGS").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         runCatching { context.startActivity(intent) }
     }
+}
+
+fun phoneOnline(context: Context): Boolean {
+    val manager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+    val network = manager.activeNetwork ?: return false
+    val caps = manager.getNetworkCapabilities(network) ?: return false
+    return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
 }
 
 class VoiceProbe(

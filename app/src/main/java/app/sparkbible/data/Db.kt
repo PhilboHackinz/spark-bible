@@ -73,6 +73,30 @@ interface SparkDao {
     @Query("SELECT * FROM plants ORDER BY at ASC")
     fun plants(): Flow<List<PlantEntity>>
 
+    @Query("SELECT * FROM plants ORDER BY at ASC")
+    suspend fun plantsOnce(): List<PlantEntity>
+
+    @Query("SELECT * FROM highlights ORDER BY created DESC")
+    suspend fun highlightsOnce(): List<HighlightEntity>
+
+    @Query("DELETE FROM moments")
+    suspend fun clearMoments()
+
+    @Query("DELETE FROM plants")
+    suspend fun clearPlants()
+
+    @Query("DELETE FROM highlights")
+    suspend fun clearHighlights()
+
+    @Insert
+    suspend fun insertMoments(rows: List<MomentEntity>)
+
+    @Insert
+    suspend fun insertPlants(rows: List<PlantEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertHighlights(rows: List<HighlightEntity>)
+
     @Query("SELECT * FROM highlights ORDER BY created DESC")
     fun highlights(): Flow<List<HighlightEntity>>
 

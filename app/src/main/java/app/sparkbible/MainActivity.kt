@@ -25,7 +25,7 @@ class MainActivity : ComponentActivity() {
 
     private fun handleIntent(intent: android.content.Intent?) {
         if (intent?.getStringExtra(EXTRA_OPEN) == "daily") {
-            model.openDaily()
+            model.openDailyRead()
             intent.removeExtra(EXTRA_OPEN)
         }
     }

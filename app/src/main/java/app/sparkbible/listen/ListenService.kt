@@ -46,6 +46,9 @@ class ListenService : Service(), TextToSpeech.OnInitListener {
     private lateinit var wake: PowerManager.WakeLock
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val main = android.os.Handler(android.os.Looper.getMainLooper())
+    private val sleepStop = Runnable {
+        if (verses.isNotEmpty()) countIt() else shutdown()
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -140,6 +143,7 @@ class ListenService : Service(), TextToSpeech.OnInitListener {
                     title = intent.getStringExtra(EXTRA_TITLE) ?: "Spark Bible"
                     voiceName = intent.getStringExtra(EXTRA_VOICE) ?: ""
                     val enginePkg = intent.getStringExtra(EXTRA_ENGINE) ?: ""
+                    val sleepMinutes = intent.getIntExtra(EXTRA_SLEEP, 0)
                     playing = true
                     ListenBus.title.value = title
                     ListenBus.playing.value = true
@@ -149,6 +153,7 @@ class ListenService : Service(), TextToSpeech.OnInitListener {
                     audioManager.requestAudioFocus(focusRequest)
                     publishState()
                     prepare(enginePkg)
+                    armSleep(sleepMinutes)
                     if (ready) {
                         applyVoice()
                         speak()
@@ -160,6 +165,10 @@ class ListenService : Service(), TextToSpeech.OnInitListener {
             ACTION_TOGGLE -> if (playing) pauseInternal() else if (verses.isNotEmpty()) resumeInternal()
             ACTION_STOP -> shutdown()
             ACTION_COUNT -> countIt()
+            ACTION_SLEEP -> {
+                if (verses.isEmpty()) shutdown()
+                else armSleep(intent.getIntExtra(EXTRA_SLEEP, 0))
+            }
         }
         return START_NOT_STICKY
     }
@@ -266,7 +275,15 @@ class ListenService : Service(), TextToSpeech.OnInitListener {
         }
     }
 
+    private fun armSleep(minutes: Int) {
+        main.removeCallbacks(sleepStop)
+        ListenBus.sleepMinutes.value = minutes.coerceAtLeast(0)
+        if (minutes > 0) main.postDelayed(sleepStop, minutes * 60_000L)
+    }
+
     private fun shutdown() {
+        main.removeCallbacks(sleepStop)
+        ListenBus.sleepMinutes.value = 0
         playing = false
         pending = false
         tts?.stop()
@@ -353,6 +370,7 @@ class ListenService : Service(), TextToSpeech.OnInitListener {
         const val ACTION_TOGGLE = "app.sparkbible.TOGGLE"
         const val ACTION_STOP = "app.sparkbible.STOP"
         const val ACTION_COUNT = "app.sparkbible.COUNT"
+        const val ACTION_SLEEP = "app.sparkbible.SLEEP"
         const val EXTRA_LINES = "lines"
         const val EXTRA_RATE = "rate"
         const val EXTRA_WALKING = "walking"
@@ -360,6 +378,7 @@ class ListenService : Service(), TextToSpeech.OnInitListener {
         const val EXTRA_INDEX = "index"
         const val EXTRA_ENGINE = "engine"
         const val EXTRA_VOICE = "voice"
+        const val EXTRA_SLEEP = "sleep"
         const val CHANNEL = "spark_listen"
         private const val NOTIF = 42
 
@@ -372,6 +391,7 @@ class ListenService : Service(), TextToSpeech.OnInitListener {
             title: String,
             engine: String = "",
             voice: String = "",
+            sleepMinutes: Int = 0,
         ) {
             val intent = Intent(context, ListenService::class.java).apply {
                 action = ACTION_PLAY
@@ -382,6 +402,7 @@ class ListenService : Service(), TextToSpeech.OnInitListener {
                 putExtra(EXTRA_TITLE, title)
                 putExtra(EXTRA_ENGINE, engine)
                 putExtra(EXTRA_VOICE, voice)
+                putExtra(EXTRA_SLEEP, sleepMinutes)
             }
             context.startForegroundService(intent)
         }
@@ -392,6 +413,14 @@ class ListenService : Service(), TextToSpeech.OnInitListener {
 
         fun stop(context: Context) {
             context.startService(Intent(context, ListenService::class.java).setAction(ACTION_STOP))
+        }
+
+        fun sleep(context: Context, minutes: Int) {
+            context.startService(
+                Intent(context, ListenService::class.java)
+                    .setAction(ACTION_SLEEP)
+                    .putExtra(EXTRA_SLEEP, minutes),
+            )
         }
     }
 }

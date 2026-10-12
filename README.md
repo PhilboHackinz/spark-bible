@@ -8,20 +8,22 @@ Spark Bible is a native Kotlin app (Jetpack Compose, Room, offline text). It is 
 
 Android 8 or newer.
 
-The [v1.4.0 release](https://github.com/PhilboHackinz/spark-bible/releases/tag/v1.4.0) has a signed APK. Download it, open it, and allow install from your browser or files app if Android asks.
+The [v1.5.0 release](https://github.com/PhilboHackinz/spark-bible/releases/tag/v1.5.0) has a signed APK. Download it, open it, and allow install from your browser or files app if Android asks. Installing over 1.4.0 keeps your garden, highlights, and place.
 
 If you later install a build you made yourself, uninstall the release first. A build from source is signed with a different key.
 
 ## What it does
 
-- Energy check: one verse, a short passage, or a longer stretch
+- Energy check starts at one verse. A little more is there if you want a short passage or a longer stretch
 - Read, listen, or both, with follow-along highlighting
-- Listening keeps going if you leave the app
-- A garden that only grows
-- Daily spark widget and gentle reminders
+- The screen stays awake while you are reading
+- Listening keeps going if you leave the app, with an optional sleep timer
+- A garden that sprouts and blooms, or a sky that forms shapes. Nothing resets
+- Daily spark widget opens today's verse. Reminders stay gentle
 - Five public-domain translations, switchable in Settings
-- Voices are named by accent and person, with Hear on each row
+- Voices are named by accent and person, with Hear on each row. Voices that need a connection hide when you are offline
 - Phone voices, plus RHVoice, eSpeak NG, or SherpaTTS once those engines are installed
+- Settings can save a copy of your garden, highlights, and place, and bring that file back. No account
 
 Your place, highlights, and garden stay on the phone. There is no account.
 
