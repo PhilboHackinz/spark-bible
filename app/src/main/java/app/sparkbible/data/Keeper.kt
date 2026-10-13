@@ -1,17 +1,27 @@
 package app.sparkbible.data
 
+data class KeptReading(
+    val translation: String,
+    val fontSize: Float,
+    val lineHeight: Float,
+    val speechRate: Float,
+    val voiceEngine: String,
+    val voiceName: String,
+)
+
 data class KeptCopy(
     val moments: List<MomentEntity>,
     val plants: List<PlantEntity>,
     val highlights: List<HighlightEntity>,
     val progress: ProgressEntity?,
+    val reading: KeptReading? = null,
 )
 
 object Keeper {
     const val KIND = "spark-bible-copy"
 
     fun encode(copy: KeptCopy): String = buildString {
-        append("{\"kind\":").append(jsonString(KIND)).append(",\"version\":1")
+        append("{\"kind\":").append(jsonString(KIND)).append(",\"version\":2")
         append(",\"moments\":[")
         copy.moments.forEachIndexed { index, it ->
             if (index > 0) append(',')
@@ -59,6 +69,17 @@ object Keeper {
             append(",\"openLabel\":").append(jsonString(row.openLabel))
             append(",\"sparkDoneOn\":").append(jsonString(row.sparkDoneOn))
             append(",\"lastNotified\":").append(jsonString(row.lastNotified))
+            append(",\"finishedBooks\":").append(jsonString(row.finishedBooks))
+            append('}')
+        }
+        copy.reading?.let { reading ->
+            append(",\"reading\":{")
+            append("\"translation\":").append(jsonString(reading.translation))
+            append(",\"fontSize\":").append(reading.fontSize)
+            append(",\"lineHeight\":").append(reading.lineHeight)
+            append(",\"speechRate\":").append(reading.speechRate)
+            append(",\"voiceEngine\":").append(jsonString(reading.voiceEngine))
+            append(",\"voiceName\":").append(jsonString(reading.voiceName))
             append('}')
         }
         append('}')
@@ -106,9 +127,20 @@ object Keeper {
                 openLabel = row.str("openLabel"),
                 sparkDoneOn = row.str("sparkDoneOn"),
                 lastNotified = row.str("lastNotified"),
+                finishedBooks = row.str("finishedBooks"),
             )
         }
-        return KeptCopy(moments, plants, highlights, progress)
+        val reading = (root["reading"] as? Map<*, *>)?.let { row ->
+            KeptReading(
+                translation = row.str("translation").ifBlank { "web" },
+                fontSize = row.float("fontSize", 20f),
+                lineHeight = row.float("lineHeight", 1.65f),
+                speechRate = row.float("speechRate", 1f),
+                voiceEngine = row.str("voiceEngine"),
+                voiceName = row.str("voiceName"),
+            )
+        }
+        return KeptCopy(moments, plants, highlights, progress, reading)
     }
 }
 
@@ -133,6 +165,13 @@ private fun Map<*, *>.int(key: String, default: Int = 0): Int = when (val value 
     is Long -> value.toInt()
     is Int -> value
     is Double -> value.toInt()
+    else -> default
+}
+
+private fun Map<*, *>.float(key: String, default: Float): Float = when (val value = this[key]) {
+    is Double -> value.toFloat()
+    is Long -> value.toFloat()
+    is Int -> value.toFloat()
     else -> default
 }
 
@@ -226,15 +265,27 @@ private object Json {
             error("string")
         }
 
-        private fun num(): Long {
+        private fun num(): Any {
             val start = index
             if (peek('-')) index++
             if (index >= source.length || !source[index].isDigit()) error("number")
             while (index < source.length && source[index].isDigit()) index++
-            if (index < source.length && (source[index] == '.' || source[index] == 'e' || source[index] == 'E')) {
-                error("number")
+            var decimal = false
+            if (index < source.length && source[index] == '.') {
+                decimal = true
+                index++
+                if (index >= source.length || !source[index].isDigit()) error("number")
+                while (index < source.length && source[index].isDigit()) index++
             }
-            return source.substring(start, index).toLong()
+            if (index < source.length && (source[index] == 'e' || source[index] == 'E')) {
+                decimal = true
+                index++
+                if (index < source.length && (source[index] == '+' || source[index] == '-')) index++
+                if (index >= source.length || !source[index].isDigit()) error("number")
+                while (index < source.length && source[index].isDigit()) index++
+            }
+            val raw = source.substring(start, index)
+            return if (decimal) raw.toDouble() else raw.toLong()
         }
 
         private fun literal(word: String, value: Any?): Any? {

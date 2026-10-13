@@ -169,6 +169,10 @@ class ListenService : Service(), TextToSpeech.OnInitListener {
                 if (verses.isEmpty()) shutdown()
                 else armSleep(intent.getIntExtra(EXTRA_SLEEP, 0))
             }
+            ACTION_EXTEND -> {
+                val lines = intent.getStringArrayListExtra(EXTRA_LINES).orEmpty()
+                if (lines.isNotEmpty()) verses = lines
+            }
         }
         return START_NOT_STICKY
     }
@@ -371,6 +375,7 @@ class ListenService : Service(), TextToSpeech.OnInitListener {
         const val ACTION_STOP = "app.sparkbible.STOP"
         const val ACTION_COUNT = "app.sparkbible.COUNT"
         const val ACTION_SLEEP = "app.sparkbible.SLEEP"
+        const val ACTION_EXTEND = "app.sparkbible.EXTEND"
         const val EXTRA_LINES = "lines"
         const val EXTRA_RATE = "rate"
         const val EXTRA_WALKING = "walking"
@@ -420,6 +425,14 @@ class ListenService : Service(), TextToSpeech.OnInitListener {
                 Intent(context, ListenService::class.java)
                     .setAction(ACTION_SLEEP)
                     .putExtra(EXTRA_SLEEP, minutes),
+            )
+        }
+
+        fun extend(context: Context, lines: List<String>) {
+            context.startService(
+                Intent(context, ListenService::class.java)
+                    .setAction(ACTION_EXTEND)
+                    .putStringArrayListExtra(EXTRA_LINES, ArrayList(lines)),
             )
         }
     }

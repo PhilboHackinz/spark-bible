@@ -8,14 +8,20 @@ class BibleStore(private val context: Context) {
     @Volatile
     var translation: String = "web"
 
+    @Volatile
+    var scriptureKey: String = ""
+
     private val books = HashMap<String, List<BookInfo>>()
     private val cache = HashMap<String, List<List<String>>>()
+    private val online = OnlineBible(context)
 
-    fun index(): List<BookInfo> = indexFor(translation)
+    fun index(): List<BookInfo> = indexFor(if (Translations.get(translation).online) "web" else translation)
 
     fun bookName(i: Int): String = index().getOrNull(i)?.name ?: "Scripture"
 
     fun loadBook(i: Int): List<List<String>> {
+        val info = Translations.get(translation)
+        if (info.online) return online.loadBook(info, i, scriptureKey)
         val id = translation
         val key = "$id:$i"
         synchronized(cache) {

@@ -11,7 +11,6 @@ object Logic {
         "That counted.",
         "You showed up. That's the practice.",
         "Small is still real.",
-        "Your garden kept a little of this.",
         "Leaving when you're done is a skill.",
         "No catching up required.",
     )
@@ -113,7 +112,21 @@ object Logic {
 
     fun spark(id: String): Spark? = SparkCatalog.sparks.find { it.id == id }
 
-    fun locksLength(origin: Origin): Boolean = origin is Origin.Daily || origin is Origin.SparkItem
+    fun locksLength(origin: Origin): Boolean =
+        origin is Origin.Daily || origin is Origin.SparkItem || origin is Origin.Minute
+
+    fun lengthLocked(origin: String): Boolean =
+        origin == "daily" || origin == "spark" || origin == "minute"
+
+    fun keptLine(style: ProgressStyle): String = when (style) {
+        ProgressStyle.GARDEN -> "A new sprout is in your garden. It will not wilt."
+        ProgressStyle.CONSTELLATION -> "A new star is in your sky. It will stay."
+    }
+
+    fun spokenLines(place: Place): List<String> {
+        val lines = place.verses.map { it.text }
+        return if (place.words.isBlank()) lines else lines + place.words
+    }
 
     fun greeting(hour: Int): String = when (hour) {
         in 0..4 -> "Still up? That's okay."
@@ -171,6 +184,18 @@ object Logic {
         trail = if (origin == "trail") nextOnTrail else trail,
         sparkDoneOn = if (origin == "daily") today else sparkDoneOn,
     )
+
+    fun isLastVerse(loadBook: (Int) -> List<List<String>>, pin: VersePin): Boolean {
+        val data = loadBook(pin.book)
+        if (data.isEmpty()) return false
+        return pin.chapter == data.size && pin.verse == data.last().size
+    }
+
+    fun rememberBooks(existing: String, books: Set<Int>): String {
+        val kept = existing.split(',').mapNotNull { it.toIntOrNull() }.toMutableSet()
+        kept.addAll(books)
+        return kept.sorted().joinToString(",")
+    }
 
     fun weekLine(count: Int, aim: Int): String = when {
         count == 0 -> "Nothing yet this week. That's a fine place to start."

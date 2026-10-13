@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -19,9 +21,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -58,6 +57,7 @@ fun TodayScreen(vm: SparkViewModel) {
     val bookName = vm.books.collectAsStateWithLifecycle().value.getOrNull(daily.book)?.name ?: "Today"
     val dailyLabel = if (daily.start == daily.end) "$bookName ${daily.chapter}:${daily.start}"
     else "$bookName ${daily.chapter}:${daily.start}–${daily.end}"
+    val dailyWords by vm.dailyWords.collectAsStateWithLifecycle()
 
     Column(
         Modifier
@@ -94,6 +94,26 @@ fun TodayScreen(vm: SparkViewModel) {
                 )
             }
         }
+        SoftCard {
+            Text("DAILY SPARK", color = palette.ember, fontSize = 12.sp, letterSpacing = 1.sp)
+            Text(dailyLabel, color = palette.sage, modifier = Modifier.padding(top = 6.dp))
+            if (dailyWords.isNotBlank()) {
+                Text(
+                    dailyWords,
+                    style = androidx.compose.material3.MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+            }
+            val done = progress.sparkDoneOn == today.toString()
+            Text(
+                if (done) "You already sat with this. Opening it again still counts." else "Picked for today. No catching up.",
+                color = palette.muted,
+                modifier = Modifier.padding(top = 6.dp),
+            )
+            PrimaryButton(if (done) "Open it again" else "Sit with this", Modifier.padding(top = 12.dp)) {
+                vm.openDaily()
+            }
+        }
         if (progress.openBook >= 0) {
             SoftCard {
                 Text("Still open", color = palette.ember, fontSize = 12.sp)
@@ -102,45 +122,73 @@ fun TodayScreen(vm: SparkViewModel) {
                 PrimaryButton("Return to it", Modifier.padding(top = 12.dp)) { vm.resume() }
             }
         }
-        var moreFocus by rememberSaveable { mutableStateOf(false) }
-        Text("How's your focus right now?", style = androidx.compose.material3.MaterialTheme.typography.titleMedium)
-        PrimaryButton(if (busy) "Opening…" else "One verse") { vm.openSetup(Energy.LOW, Origin.Trail) }
-        Text("About a minute. Stop whenever.", color = palette.muted)
-        Text(
-            if (moreFocus) "That's plenty" else "A little more",
-            color = palette.sage,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier
-                .semantics { contentDescription = if (moreFocus) "Hide longer sessions" else "Show a short passage or a longer stretch" }
-                .clickable { moreFocus = !moreFocus }
-                .padding(vertical = 4.dp),
-        )
-        if (moreFocus) {
-            EnergyButton("Steady", "A short passage. Easy to finish.", Energy.MEDIUM, busy, vm)
-            EnergyButton("Locked in", "A longer stretch, if you want it.", Energy.HIGH, busy, vm)
-        }
+        Text("Keep reading", style = androidx.compose.material3.MaterialTheme.typography.titleMedium)
+        EnergyButton("One verse", "About a minute. Stop whenever.", Energy.LOW, busy, vm)
+        EnergyButton("Steady", "A short passage. Easy to finish.", Energy.MEDIUM, busy, vm)
+        EnergyButton("Locked in", "A longer stretch, if you want it.", Energy.HIGH, busy, vm)
         if (error != null) Text(error ?: "", color = palette.ember)
-        SoftCard {
-            Text("DAILY SPARK", color = palette.ember, fontSize = 12.sp, letterSpacing = 1.sp)
-            Text(dailyLabel, color = palette.sage, modifier = Modifier.padding(top = 6.dp))
-            Text(daily.title, style = androidx.compose.material3.MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 2.dp))
-            val done = progress.sparkDoneOn == today.toString()
-            Text(
-                if (done) "You already sat with this. Opening it again still counts." else "A small piece, picked for today. No catching up.",
-                color = palette.muted,
-                modifier = Modifier.padding(top = 6.dp),
-            )
-            PrimaryButton(if (done) "Open it again" else "Sit with this", Modifier.padding(top = 12.dp)) {
-                vm.openDaily()
-            }
-        }
+        Text("A feeling, if you have one", style = androidx.compose.material3.MaterialTheme.typography.titleMedium)
+        FeelingRow { topicId -> vm.push(Screen.Topic(topicId)) }
         WeekBlock(moments, settings.weeklyAim)
         Text(
-            "${app.sparkbible.data.Translations.get(settings.translation).name} · public domain. Any amount counts.",
+            "${app.sparkbible.data.Translations.get(settings.translation).name} · any amount counts.",
             color = palette.muted,
             fontSize = 12.sp,
             modifier = Modifier.padding(bottom = 12.dp),
         )
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun FeelingRow(onTopic: (String) -> Unit) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        listOf(
+            "Anxious" to "anxiety",
+            "Overwhelmed" to "overwhelm",
+            "Thankful" to "thankful",
+            "Tired" to "rest",
+            "Hope" to "hope",
+        ).forEach { (label, topicId) ->
+            ChoiceChip(label, false) { onTopic(topicId) }
+        }
+    }
+}
+
+@Composable
+fun MinutesScreen(vm: SparkViewModel) {
+    val palette = LocalPalette.current
+    val books by vm.books.collectAsStateWithLifecycle()
+    Column(
+        Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp, vertical = 18.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text("Back", color = palette.sage, modifier = Modifier.clickable { vm.back() }.padding(vertical = 8.dp))
+        Text("A few minutes", style = androidx.compose.material3.MaterialTheme.typography.displaySmall)
+        Text(
+            "Open one when you want to. Nothing here is today's assignment, and nothing is checked off.",
+            color = palette.muted,
+        )
+        app.sparkbible.data.Devotions.all.forEach { devotion ->
+            val name = books.getOrNull(devotion.book)?.name ?: "Passage"
+            val ref = if (devotion.start == devotion.end) "$name ${devotion.chapter}:${devotion.start}"
+            else "$name ${devotion.chapter}:${devotion.start}–${devotion.end}"
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(palette.surface)
+                    .border(1.dp, palette.line, RoundedCornerShape(20.dp))
+                    .clickable { vm.openSetup(Energy.LOW, Origin.Minute(devotion.id)) }
+                    .padding(16.dp),
+            ) {
+                Text(devotion.title, fontWeight = FontWeight.SemiBold, fontSize = 18.sp, color = palette.ink)
+                Text(ref, color = palette.sage, modifier = Modifier.padding(top = 4.dp))
+            }
+        }
     }
 }
 
@@ -177,17 +225,20 @@ fun SetupScreen(vm: SparkViewModel, screen: Screen.Setup) {
     ) {
         Text("Back", color = palette.sage, modifier = Modifier.clickable { vm.back() }.padding(vertical = 8.dp))
         Text(
-            when (screen.energy) {
-                Energy.LOW -> "Scattered"
-                Energy.MEDIUM -> "Steady"
-                Energy.HIGH -> "Locked in"
+            when {
+                screen.origin is Origin.Minute && place != null -> place.label
+                screen.energy == Energy.LOW -> "One verse"
+                screen.energy == Energy.MEDIUM -> "Steady"
+                else -> "Locked in"
             },
             style = androidx.compose.material3.MaterialTheme.typography.displaySmall,
         )
         if (place == null) {
             Text(if (busy) "Opening a short passage…" else "One moment.", color = palette.muted)
         } else {
-            Text(place.label, color = palette.sage, fontSize = 16.sp)
+            if (screen.origin !is Origin.Minute) {
+                Text(place.label, color = palette.sage, fontSize = 16.sp)
+            }
             Text(place.verses.first().text, color = palette.ink, maxLines = 4)
             val words = place.verses.sumOf { it.text.split(Regex("\\s+")).size }
             val mins = (words / 170.0).roundToInt().coerceAtLeast(1)
@@ -246,9 +297,9 @@ fun ReflectScreen(vm: SparkViewModel, screen: Screen.Reflect) {
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Spacer(Modifier.height(24.dp))
-        Text(screen.line, style = androidx.compose.material3.MaterialTheme.typography.displaySmall)
+        Text("That counted.", style = androidx.compose.material3.MaterialTheme.typography.displaySmall)
         Text(screen.place.label, color = palette.sage)
-        Text("A new sprout is in your garden. It will not wilt.", color = palette.muted)
+        Text(screen.line, color = palette.muted)
         SoftCard {
             Text(screen.place.prompt, fontSize = 18.sp, color = palette.ink)
         }

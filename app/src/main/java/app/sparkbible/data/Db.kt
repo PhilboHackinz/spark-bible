@@ -60,6 +60,7 @@ data class ProgressEntity(
     val openLabel: String = "",
     val sparkDoneOn: String = "",
     val lastNotified: String = "",
+    val finishedBooks: String = "",
 )
 
 @Dao
@@ -127,7 +128,7 @@ interface SparkDao {
 
 @Database(
     entities = [MomentEntity::class, PlantEntity::class, HighlightEntity::class, ProgressEntity::class],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 abstract class SparkDb : RoomDatabase() {

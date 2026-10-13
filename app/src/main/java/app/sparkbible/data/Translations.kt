@@ -5,6 +5,7 @@ data class TranslationInfo(
     val name: String,
     val short: String,
     val note: String,
+    val online: Boolean = false,
 )
 
 object Translations {
@@ -38,6 +39,33 @@ object Translations {
             "Douay-Rheims",
             "DRA",
             "Public-domain Catholic text. Esther and Daniel include extra chapters.",
+        ),
+        TranslationInfo(
+            "bsb",
+            "Berean Standard Bible",
+            "BSB",
+            "Modern wording. Public domain. Already on this phone.",
+        ),
+        TranslationInfo(
+            "nlt",
+            "New Living Translation",
+            "NLT",
+            "Online only. Needs the connection key.",
+            online = true,
+        ),
+        TranslationInfo(
+            "nasb",
+            "New American Standard",
+            "NASB",
+            "Online only. Needs the connection key.",
+            online = true,
+        ),
+        TranslationInfo(
+            "csb",
+            "Christian Standard Bible",
+            "CSB",
+            "Online only. Needs the connection key.",
+            online = true,
         ),
     )
 

@@ -9,7 +9,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -40,7 +47,12 @@ fun GardenScreen(vm: SparkViewModel) {
     val plants by vm.plants.collectAsStateWithLifecycle()
     val moments by vm.moments.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
+    val progress by vm.progress.collectAsStateWithLifecycle()
+    val books by vm.books.collectAsStateWithLifecycle()
     val palette = LocalPalette.current
+    var shelf by rememberSaveable { mutableStateOf(false) }
+    val finished = progress.finishedBooks.split(',').mapNotNull { it.toIntOrNull() }
+    val finishedNames = finished.mapNotNull { books.getOrNull(it)?.name }
     Column(
         Modifier
             .fillMaxSize()
@@ -51,12 +63,16 @@ fun GardenScreen(vm: SparkViewModel) {
         Text(if (sky) "Your sky" else "Your garden", style = androidx.compose.material3.MaterialTheme.typography.displaySmall)
         Text(
             if (sky) "Stars join into a shape. Nothing is erased."
-            else "They sprout and open. Nothing here dies or resets.",
+            else "A botanical plate. Nothing here dies or resets.",
             color = palette.muted,
             modifier = Modifier.padding(top = 6.dp, bottom = 16.dp),
         )
         if (settings.progressStyle == ProgressStyle.GARDEN) {
-            GardenBed(plants)
+            if (shelf) {
+                Shelf(finishedNames) { shelf = false }
+            } else {
+                GardenBed(plants, finishedNames.size) { shelf = true }
+            }
         } else {
             Constellation(plants)
         }
@@ -67,8 +83,8 @@ fun GardenScreen(vm: SparkViewModel) {
             Text(
                 when {
                     plants.isEmpty() -> "Nothing planted yet. One verse is enough to start."
-                    plants.size <= 18 -> "${plants.size} sprout${if (plants.size == 1) "" else "s"} from showing up."
-                    else -> "$shown in the bed, ${plants.size} remembered. Nothing is thrown away."
+                    plants.size <= 18 -> "${plants.size} bloom${if (plants.size == 1) "" else "s"} from showing up."
+                    else -> "$shown on the plate, ${plants.size} remembered. Nothing is thrown away."
                 },
                 color = palette.ink,
                 modifier = Modifier.padding(top = 14.dp),
@@ -101,47 +117,118 @@ fun GardenScreen(vm: SparkViewModel) {
 }
 
 @Composable
-private fun GardenBed(plants: List<PlantEntity>) {
-    val palette = LocalPalette.current
+private fun GardenBed(plants: List<PlantEntity>, shelfCount: Int, onShelf: () -> Unit) {
     var started by remember(plants.size) { mutableLongStateOf(System.nanoTime()) }
     var frame by remember(plants.size) { mutableLongStateOf(started) }
+    val growMs = ((plants.size.coerceAtMost(18) - 1).coerceAtLeast(0) * 80f) + 1200f
     LaunchedEffect(plants.size) {
+        if (plants.isEmpty()) return@LaunchedEffect
         val origin = System.nanoTime()
         started = origin
         while (isActive) {
-            withFrameNanos { frame = it }
+            val now = withFrameNanos { frameTime ->
+                frame = frameTime
+                frameTime
+            }
+            if ((now - origin) / 1_000_000f > growMs) break
         }
     }
-    Canvas(
+    Box(Modifier.fillMaxWidth().height(300.dp)) {
+        Canvas(
+            Modifier
+                .fillMaxSize()
+                .clip(RoundedCornerShape(28.dp))
+                .background(paper)
+                .semantics {
+                    contentDescription = if (plants.isEmpty()) {
+                        "Garden plate. Nothing planted yet. A shelf waits in the distance."
+                    } else {
+                        "Garden plate. ${plants.size} blooms. A shelf waits in the distance."
+                    }
+                },
+        ) {
+            val soil = size.height * 0.78f
+            drawRect(Color(0xFFE4D3B4), topLeft = Offset(0f, soil), size = androidx.compose.ui.geometry.Size(size.width, size.height - soil))
+            drawShelf(Offset(size.width * 0.5f, size.height * 0.18f), shelfCount)
+            val elapsed = (frame - started) / 1_000_000f
+            plants.takeLast(18).forEachIndexed { index, plant ->
+                val h = plant.id.fold(0) { acc, c -> acc * 31 + c.code }
+                val x = size.width * (0.1f + (h and 1023) / 1023f * 0.8f)
+                val scale = 0.8f + ((h shr 10) and 255) / 255f * 0.45f
+                val growth = easeOut(((elapsed - index * 80f) / 1200f).coerceIn(0f, 1f))
+                drawPlant(plant.kind, Offset(x, soil), scale, growth, h)
+            }
+        }
+        Box(
+            Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = 28.dp)
+                .size(width = 140.dp, height = 64.dp)
+                .semantics { contentDescription = "Shelf in the distance. Open it." }
+                .clickable(onClick = onShelf),
+        )
+    }
+}
+
+@Composable
+private fun Shelf(names: List<String>, onBack: () -> Unit) {
+    Column(
         Modifier
             .fillMaxWidth()
-            .height(300.dp)
             .clip(RoundedCornerShape(28.dp))
-            .background(palette.sageSoft)
-            .semantics {
-                contentDescription = if (plants.isEmpty()) {
-                    "Garden bed. Nothing planted yet."
-                } else {
-                    "Garden bed. ${plants.size} plant${if (plants.size == 1) "" else "s"} sprouting and blooming."
-                }
-            },
+            .background(paper)
+            .padding(18.dp),
     ) {
-        val soil = size.height * 0.74f
-        drawRect(
-            palette.sage.copy(alpha = 0.18f),
-            topLeft = Offset(0f, soil),
-            size = androidx.compose.ui.geometry.Size(size.width, size.height - soil),
-        )
-        val elapsed = (frame - started) / 1_000_000f
-        val swayTime = frame / 1_000_000_000f
-        plants.takeLast(18).forEachIndexed { index, plant ->
-            val h = plant.id.fold(0) { acc, c -> acc * 31 + c.code }
-            val x = size.width * (0.1f + (h and 1023) / 1023f * 0.8f)
-            val scale = 0.8f + ((h shr 10) and 255) / 255f * 0.45f
-            val growth = easeOut(((elapsed - index * 80f) / 1200f).coerceIn(0f, 1f))
-            val sway = sin(swayTime * 1.4f + x * 0.02f) * 3.5f * growth
-            drawPlant(plant.kind, Offset(x, soil), scale, growth, sway, palette)
+        Text("Back", color = Color(0xFF2C6848), modifier = Modifier.clickable(onClick = onBack).padding(bottom = 8.dp))
+        Text("The shelf", color = ink, fontSize = 22.sp)
+        if (names.isEmpty()) {
+            Text(
+                "Nothing standing here yet. Finish a book and it will.",
+                color = Color(0xFF5C5148),
+                modifier = Modifier.padding(top = 8.dp),
+            )
+        } else {
+            names.forEach { name ->
+                Text(
+                    name,
+                    color = Color(0xFFF6E7C1),
+                    modifier = Modifier
+                        .padding(top = 10.dp)
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color(0xFF6B4428))
+                        .padding(horizontal = 12.dp, vertical = 14.dp),
+                )
+            }
         }
+    }
+}
+
+private val paper = Color(0xFFF3E6CF)
+private val ink = Color(0xFF3C2F29)
+private val leaf = Color(0xFF2F6B4F)
+private val bloomColors = listOf(
+    Color(0xFFC6453A),
+    Color(0xFFE07A3D),
+    Color(0xFFD45D79),
+    Color(0xFF7E4B8A),
+    Color(0xFFF2C14E),
+    Color(0xFF3E6B8A),
+    Color(0xFFF4F1E8),
+    Color(0xFF8C3A4B),
+)
+
+private fun DrawScope.drawShelf(center: Offset, count: Int) {
+    drawLine(Color(0xFF6B4428), Offset(center.x - 58f, center.y), Offset(center.x + 58f, center.y), strokeWidth = 4f)
+    val shown = count.coerceAtMost(7)
+    if (shown == 0) return
+    val left = center.x - shown * 7f
+    repeat(shown) { index ->
+        drawRect(
+            Color(0xFF8C5A32),
+            topLeft = Offset(left + index * 14f, center.y - 22f),
+            size = androidx.compose.ui.geometry.Size(8f, 22f),
+        )
     }
 }
 
@@ -150,48 +237,49 @@ private fun easeOut(t: Float): Float {
     return 1f - (1f - x) * (1f - x) * (1f - x)
 }
 
-private fun DrawScope.drawPlant(
-    kind: Int,
-    base: Offset,
-    scale: Float,
-    growth: Float,
-    sway: Float,
-    palette: SparkPalette,
-) {
-    if (growth <= 0.01f) {
-        drawCircle(palette.sage, 3f * scale, Offset(base.x, base.y - 2f))
-        return
-    }
+private fun DrawScope.drawPlant(kind: Int, base: Offset, scale: Float, growth: Float, hash: Int) {
+    if (growth <= 0.01f) return
     val stemT = easeOut((growth / 0.55f).coerceIn(0f, 1f))
-    val stem = 46f * scale * stemT
-    val top = Offset(base.x + sway, base.y - stem)
-    drawLine(palette.sage, base, top, strokeWidth = 3f * scale)
-    val leaf = palette.sage
-    val bloom = if (kind % 2 == 0) palette.ember else palette.sage
+    val stem = 52f * scale * stemT
+    val lean = ((hash and 15) - 8) * 0.6f * scale
+    val top = Offset(base.x + lean, base.y - stem)
+    drawLine(leaf, base, top, strokeWidth = 2.2f * scale)
+    val leafT = easeOut(((growth - 0.3f) / 0.4f).coerceIn(0f, 1f))
+    if (leafT > 0f) {
+        val path = Path().apply {
+            moveTo(base.x, base.y - stem * 0.45f)
+            quadraticTo(base.x - 16f * scale, base.y - stem * 0.7f, base.x - 8f * scale, base.y - stem * 0.35f)
+        }
+        drawPath(path, leaf.copy(alpha = leafT), style = Stroke(width = 1.6f * scale))
+    }
     val bloomT = easeOut(((growth - 0.58f) / 0.42f).coerceIn(0f, 1f))
-    val leafT = easeOut(((growth - 0.34f) / 0.4f).coerceIn(0f, 1f))
-    if (leafT > 0f && kind % 6 != 0) {
-        drawCircle(leaf.copy(alpha = 0.85f), 9f * scale * leafT, Offset(base.x - 10f * scale, base.y - stem * 0.5f))
-    }
     if (bloomT <= 0f) return
-    when (kind % 6) {
-        0 -> drawCircle(bloom, 8f * scale * bloomT, top)
-        1 -> drawCircle(bloom, 6f * scale * bloomT, top)
-        2 -> {
-            val path = Path().apply {
-                moveTo(top.x, top.y)
-                quadraticTo(top.x + 18f * scale, top.y + stem * 0.25f, top.x + 8f * scale, top.y + stem * 0.55f)
-            }
-            drawPath(path, leaf, style = Stroke(width = 2.5f * scale))
-            drawCircle(bloom, 7f * scale * bloomT, top)
+    val color = bloomColors[kind % bloomColors.size]
+    val r = 7f * scale * bloomT
+    when (kind % 8) {
+        0 -> drawCircle(color, r, top)
+        1 -> {
+            drawCircle(color, r, Offset(top.x, top.y - r * 0.2f))
+            drawCircle(Color(0xFFF6E7C1), r * 0.35f, top)
         }
-        3 -> drawCircle(leaf.copy(alpha = 0.9f), 14f * scale * bloomT, Offset(top.x, top.y + stem * 0.15f))
-        4 -> {
-            drawCircle(bloom, 5f * scale * bloomT, Offset(top.x - 6f * scale, top.y))
-            drawCircle(palette.emberSoft, 5f * scale * bloomT, Offset(top.x + 6f * scale, top.y + 4f))
+        2 -> repeat(5) { petal ->
+            val angle = petal * 1.256f
+            drawCircle(color, r * 0.55f, Offset(top.x + kotlin.math.cos(angle) * r, top.y + kotlin.math.sin(angle) * r))
         }
-        else -> drawCircle(palette.star, 9f * scale * bloomT, top)
+        3 -> drawOval(color, Offset(top.x - r, top.y - r * 1.4f), androidx.compose.ui.geometry.Size(r * 2f, r * 2.4f))
+        4 -> repeat(4) { bell ->
+            drawCircle(color, r * 0.45f, Offset(top.x, top.y + bell * r * 0.7f))
+        }
+        5 -> {
+            drawCircle(color, r * 0.9f, top)
+            drawCircle(Color(0xFFF2C14E), r * 0.35f, top)
+        }
+        6 -> drawCircle(color.copy(alpha = 0.9f), r * 1.15f, top)
+        else -> repeat(6) { dot ->
+            drawCircle(color, r * 0.28f, Offset(top.x + (dot - 2.5f) * r * 0.35f, top.y - dot * r * 0.22f))
+        }
     }
+    drawCircle(ink.copy(alpha = 0.35f), r * 1.05f, top, style = Stroke(width = 1.1f * scale))
 }
 
 @Composable

@@ -14,50 +14,40 @@ import kotlinx.coroutines.flow.map
 private val Context.sparkSettings by preferencesDataStore("spark-settings")
 
 class SettingsStore(private val context: Context) {
-    val flow: Flow<Settings> = context.sparkSettings.data.map { p ->
-        Settings(
-            fontSize = p[Keys.font] ?: 20f,
-            lineHeight = p[Keys.leading] ?: 1.65f,
-            theme = runCatching { ThemePref.valueOf(p[Keys.theme] ?: "LIGHT") }.getOrDefault(ThemePref.LIGHT),
-            bionic = p[Keys.bionic] ?: false,
-            dyslexia = p[Keys.dyslexia] ?: false,
-            speechRate = p[Keys.rate] ?: 1f,
-            voiceEngine = p[Keys.voiceEngine] ?: "",
-            voiceName = p[Keys.voiceName] ?: "",
-            translation = p[Keys.translation] ?: "web",
-            ambient = p[Keys.ambient] ?: false,
-            walking = p[Keys.walking] ?: false,
-            progressStyle = runCatching {
-                ProgressStyle.valueOf(p[Keys.style] ?: "GARDEN")
-            }.getOrDefault(ProgressStyle.GARDEN),
-            weeklyAim = p[Keys.aim] ?: 3,
-            reminderOn = p[Keys.remind] ?: false,
-            reminderTime = p[Keys.remindTime] ?: "08:30",
-            seenIntro = p[Keys.intro] ?: false,
-        )
+    val flow: Flow<Settings> = context.sparkSettings.data.map { prefs ->
+        val blob = prefs[Keys.blob]
+        if (!blob.isNullOrBlank()) {
+            SettingsCodec.decode(blob)
+        } else {
+            Settings(
+                fontSize = prefs[Keys.font] ?: 20f,
+                lineHeight = prefs[Keys.leading] ?: 1.65f,
+                theme = runCatching { ThemePref.valueOf(prefs[Keys.theme] ?: "LIGHT") }.getOrDefault(ThemePref.LIGHT),
+                bionic = prefs[Keys.bionic] ?: false,
+                dyslexia = prefs[Keys.dyslexia] ?: false,
+                speechRate = prefs[Keys.rate] ?: 1f,
+                voiceEngine = prefs[Keys.voiceEngine] ?: "",
+                voiceName = prefs[Keys.voiceName] ?: "",
+                translation = prefs[Keys.translation] ?: "web",
+                ambient = prefs[Keys.ambient] ?: false,
+                walking = prefs[Keys.walking] ?: false,
+                progressStyle = runCatching { ProgressStyle.valueOf(prefs[Keys.style] ?: "GARDEN") }.getOrDefault(ProgressStyle.GARDEN),
+                weeklyAim = prefs[Keys.aim] ?: 3,
+                reminderOn = prefs[Keys.remind] ?: false,
+                reminderTime = prefs[Keys.remindTime] ?: "08:30",
+                seenIntro = prefs[Keys.intro] ?: false,
+            )
+        }
     }
 
     suspend fun current(): Settings = flow.first()
 
     suspend fun update(block: (Settings) -> Settings) {
         val next = block(current())
-        context.sparkSettings.edit { p ->
-            p[Keys.font] = next.fontSize
-            p[Keys.leading] = next.lineHeight
-            p[Keys.theme] = next.theme.name
-            p[Keys.bionic] = next.bionic
-            p[Keys.dyslexia] = next.dyslexia
-            p[Keys.rate] = next.speechRate
-            p[Keys.voiceEngine] = next.voiceEngine
-            p[Keys.voiceName] = next.voiceName
-            p[Keys.translation] = next.translation
-            p[Keys.ambient] = next.ambient
-            p[Keys.walking] = next.walking
-            p[Keys.style] = next.progressStyle.name
-            p[Keys.aim] = next.weeklyAim
-            p[Keys.remind] = next.reminderOn
-            p[Keys.remindTime] = next.reminderTime
-            p[Keys.intro] = next.seenIntro
+        val stored = SettingsCodec.encode(next)
+        context.sparkSettings.edit { prefs ->
+            prefs.clear()
+            prefs[Keys.blob] = stored
         }
         context.getSharedPreferences(WIDGET_PREFS, Context.MODE_PRIVATE)
             .edit()
@@ -66,6 +56,7 @@ class SettingsStore(private val context: Context) {
     }
 
     private object Keys {
+        val blob = stringPreferencesKey("blob")
         val font = floatPreferencesKey("font")
         val leading = floatPreferencesKey("leading")
         val theme = stringPreferencesKey("theme")

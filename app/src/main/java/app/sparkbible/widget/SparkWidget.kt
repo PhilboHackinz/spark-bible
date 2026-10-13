@@ -32,9 +32,12 @@ class SparkWidget : AppWidgetProvider() {
             val saved = context.getSharedPreferences(SettingsStore.WIDGET_PREFS, Context.MODE_PRIVATE)
                 .getString(SettingsStore.WIDGET_TRANSLATION, "web") ?: "web"
             app.bible.translation = saved
-            val short = Translations.get(saved).short
+            val info = Translations.get(saved)
+            val short = info.short
             val spark = Logic.daily()
-            val (label, text) = try {
+            val (label, text) = if (info.online) {
+                "$short · Open the app" to "Today's verse is in an online translation."
+            } else try {
                 val book = app.bible.loadBook(spark.book)
                 val slice = book[spark.chapter - 1].subList(
                     (spark.start - 1).coerceAtLeast(0),

@@ -20,6 +20,13 @@ class LogicTest {
     }
 
     @Test
+    fun finishingTheLastVerseIsRememberedOnce() {
+        assertTrue(Logic.isLastVerse(this::load, VersePin(43, 1, 2)))
+        assertFalse(Logic.isLastVerse(this::load, VersePin(42, 1, 3)))
+        assertEquals("42,43", Logic.rememberBooks("43", setOf(42, 43)))
+    }
+
+    @Test
     fun lowEnergyIsOneVerseAndDoesNotSpill() {
         val shape = Logic.sessionShape(Energy.LOW, remainingInChapter = 12)
         assertEquals(SessionShape(1, spill = false, truncated = false), shape)

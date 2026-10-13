@@ -16,6 +16,8 @@ import app.sparkbible.data.Place
 import app.sparkbible.data.ProgressEntity
 import app.sparkbible.data.Settings
 import app.sparkbible.data.VersePin
+import app.sparkbible.data.Logic
+import app.sparkbible.listen.ListenBus
 import app.sparkbible.listen.ListenService
 import app.sparkbible.remind.Reminder
 import app.sparkbible.widget.SparkWidget
@@ -37,6 +39,8 @@ sealed interface Screen {
     data class Chapters(val book: Int) : Screen
     data object Saved : Screen
     data object Settings : Screen
+    data object Voices : Screen
+    data object Minutes : Screen
     data class Topic(val topicId: String) : Screen
     data class Setup(val energy: Energy, val origin: Origin) : Screen
     data class Read(val place: Place) : Screen
@@ -60,6 +64,8 @@ class SparkViewModel(app: Application) : AndroidViewModel(app) {
         .map { it ?: ProgressEntity() }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ProgressEntity())
     val books = MutableStateFlow(emptyList<app.sparkbible.data.BookInfo>())
+    val dailyWords = MutableStateFlow("")
+    val devotionWords = MutableStateFlow("")
 
     private var remindKey = ""
 
@@ -68,7 +74,9 @@ class SparkViewModel(app: Application) : AndroidViewModel(app) {
             spark.repo.ensure()
             val current = spark.settings.current()
             spark.bible.translation = current.translation
+            spark.bible.scriptureKey = current.scriptureKey
             books.value = spark.bible.index()
+            refreshDailyWords()
             SparkWidget.refresh(spark)
         }
         viewModelScope.launch {
@@ -78,6 +86,35 @@ class SparkViewModel(app: Application) : AndroidViewModel(app) {
                 remindKey = key
                 if (value.reminderOn) Reminder.schedule(spark, value.reminderTime) else Reminder.cancel(spark)
             }
+        }
+    }
+
+    fun showDevotion(id: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val devotion = app.sparkbible.data.Devotions.get(id) ?: return@launch
+            val current = spark.settings.current()
+            spark.bible.translation = current.translation
+            spark.bible.scriptureKey = current.scriptureKey
+            val text = runCatching {
+                val chapter = spark.bible.loadBook(devotion.book).getOrNull(devotion.chapter - 1) ?: return@runCatching ""
+                (devotion.start..devotion.end).mapNotNull { verse -> chapter.getOrNull(verse - 1) }.joinToString("\n")
+            }.getOrDefault("")
+            devotionWords.value = text
+        }
+    }
+
+    private fun note(caught: Exception, fallback: String) {
+        error.value = (caught as? IllegalStateException)?.message ?: fallback
+    }
+
+    private fun refreshDailyWords() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val sparkItem = Logic.daily()
+            val text = runCatching {
+                val chapter = spark.bible.loadBook(sparkItem.book).getOrNull(sparkItem.chapter - 1) ?: return@runCatching ""
+                (sparkItem.start..sparkItem.end).mapNotNull { verse -> chapter.getOrNull(verse - 1) }.joinToString("\n")
+            }.getOrDefault("")
+            dailyWords.value = text
         }
     }
 
@@ -106,8 +143,8 @@ class SparkViewModel(app: Application) : AndroidViewModel(app) {
                 val place = withContext(Dispatchers.IO) { spark.repo.build(origin, energy, Mode.READ, trail) }
                 draft.value = place
                 push(Screen.Setup(energy, origin))
-            } catch (_: Exception) {
-                error.value = "Couldn't open that passage. Try again in a moment."
+            } catch (e: Exception) {
+                note(e, "Couldn't open that passage. Try again in a moment.")
             } finally {
                 busy.value = false
             }
@@ -125,8 +162,8 @@ class SparkViewModel(app: Application) : AndroidViewModel(app) {
                 val place = withContext(Dispatchers.IO) { spark.repo.build(Origin.Daily, Energy.LOW, Mode.READ, trail) }
                 withContext(Dispatchers.IO) { spark.repo.setOpen(place) }
                 _stack.value = listOf(Screen.Today, Screen.Read(place))
-            } catch (_: Exception) {
-                error.value = "Couldn't open today's spark."
+            } catch (e: Exception) {
+                note(e, "Couldn't open today's spark.")
             } finally {
                 busy.value = false
             }
@@ -145,8 +182,8 @@ class SparkViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 draft.value = place
                 _stack.value = _stack.value.dropLast(1) + Screen.Setup(energy, setup.origin)
-            } catch (_: Exception) {
-                error.value = "Couldn't resize that passage."
+            } catch (e: Exception) {
+                note(e, "Couldn't resize that passage.")
             } finally {
                 busy.value = false
             }
@@ -180,7 +217,18 @@ class SparkViewModel(app: Application) : AndroidViewModel(app) {
 
     fun showReflect(place: Place) {
         if (_stack.value.lastOrNull() is Screen.Reflect) return
-        _stack.value = listOf(Screen.Today, Screen.Reflect(place, app.sparkbible.data.Logic.wins.random()))
+        val line = Logic.keptLine(settings.value.progressStyle)
+        _stack.value = listOf(Screen.Today, Screen.Reflect(place, line))
+    }
+
+    fun extendReading() {
+        val last = _stack.value.lastOrNull() as? Screen.Read ?: return
+        if (Logic.lengthLocked(last.place.origin)) return
+        viewModelScope.launch {
+            val place = withContext(Dispatchers.IO) { spark.repo.extend(last.place) }
+            _stack.value = _stack.value.dropLast(1) + Screen.Read(place)
+            if (ListenBus.playing.value) ListenService.extend(spark, Logic.spokenLines(place))
+        }
     }
 
     fun toggleHighlight(verse: PassageVerse) {
@@ -197,14 +245,35 @@ class SparkViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setTranslation(id: String) {
         viewModelScope.launch {
+            val wasPlaying = ListenBus.playing.value
+            val index = ListenBus.verse.value
             spark.settings.update { it.copy(translation = id) }
             spark.bible.translation = id
+            spark.bible.scriptureKey = spark.settings.current().scriptureKey
             books.value = spark.bible.index()
-            ListenService.stop(spark)
+            refreshDailyWords()
             val last = _stack.value.lastOrNull()
             if (last is Screen.Read) {
                 val place = withContext(Dispatchers.IO) { spark.repo.refresh(last.place) }
                 _stack.value = _stack.value.dropLast(1) + Screen.Read(place)
+                val current = spark.settings.current()
+                val lines = Logic.spokenLines(place)
+                if (wasPlaying && lines.isNotEmpty()) {
+                    ListenService.play(
+                        spark,
+                        lines,
+                        index.coerceIn(0, lines.lastIndex),
+                        current.speechRate,
+                        current.walking,
+                        place.label,
+                        current.voiceEngine,
+                        current.voiceName,
+                    )
+                } else {
+                    ListenService.stop(spark)
+                }
+            } else {
+                ListenService.stop(spark)
             }
             val open = draft.value
             if (open != null) {
@@ -221,7 +290,7 @@ class SparkViewModel(app: Application) : AndroidViewModel(app) {
                 spark.contentResolver.openOutputStream(uri)?.use { it.write(json.toByteArray()) } != null
             }.getOrDefault(false)
             copyNote.value = if (ok) {
-                "Saved. Your garden and highlights are in that file."
+                "Saved. Your garden, highlights, and the way you read are in that file."
             } else {
                 "Couldn't write that file."
             }
@@ -234,6 +303,12 @@ class SparkViewModel(app: Application) : AndroidViewModel(app) {
                 val text = spark.contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) }
                 text != null && spark.repo.importJson(text)
             }.getOrDefault(false)
+            if (ok) {
+                val current = spark.settings.current()
+                spark.bible.translation = current.translation
+                books.value = spark.bible.index()
+                SparkWidget.refresh(spark)
+            }
             copyNote.value = if (ok) "Brought back. Your garden is here again." else "That file wasn't a Spark Bible copy."
         }
     }

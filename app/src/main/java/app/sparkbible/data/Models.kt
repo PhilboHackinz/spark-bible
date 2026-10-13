@@ -38,6 +38,7 @@ sealed interface Origin {
     data object Daily : Origin
     data class SparkItem(val sparkId: String) : Origin
     data class Jump(val pin: VersePin) : Origin
+    data class Minute(val id: String) : Origin
 }
 
 data class Place(
@@ -48,6 +49,7 @@ data class Place(
     val origin: String,
     val prompt: String,
     val truncated: Boolean,
+    val words: String = "",
 )
 
 data class Settings(
@@ -67,4 +69,5 @@ data class Settings(
     val reminderOn: Boolean = false,
     val reminderTime: String = "08:30",
     val seenIntro: Boolean = false,
+    val scriptureKey: String = "",
 )

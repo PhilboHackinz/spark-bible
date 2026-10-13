@@ -13,8 +13,8 @@ android {
         applicationId = "app.sparkbible"
         minSdk = 26
         targetSdk = 35
-        versionCode = 6
-        versionName = "1.5.0"
+        versionCode = 14
+        versionName = "1.7.0"
     }
 
     val storePath = System.getenv("SPARK_STORE_FILE")

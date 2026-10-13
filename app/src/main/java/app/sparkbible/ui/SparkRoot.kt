@@ -79,11 +79,12 @@ fun SparkRoot(vm: SparkViewModel) {
                             )
                             items.forEach { (dest, label, icon) ->
                                 val selected = when (dest) {
-                                    Screen.Today -> screen is Screen.Today
+                                    Screen.Today -> screen is Screen.Today || screen is Screen.Minutes
                                     Screen.Sparks -> screen is Screen.Sparks || screen is Screen.Topic
                                     Screen.Garden -> screen is Screen.Garden
                                     else -> screen is Screen.More || screen is Screen.Library ||
-                                        screen is Screen.Chapters || screen is Screen.Saved || screen is Screen.Settings
+                                        screen is Screen.Chapters || screen is Screen.Saved ||
+                                        screen is Screen.Settings || screen is Screen.Voices
                                 }
                                 NavigationBarItem(
                                     selected = selected,
@@ -114,6 +115,8 @@ fun SparkRoot(vm: SparkViewModel) {
                     is Screen.Chapters -> ChaptersScreen(vm, screen.book)
                     Screen.Saved -> SavedScreen(vm)
                     Screen.Settings -> SettingsScreen(vm)
+                    Screen.Voices -> VoicesScreen(vm)
+                    Screen.Minutes -> MinutesScreen(vm)
                     is Screen.Topic -> TopicScreen(vm, screen.topicId)
                     is Screen.Setup -> SetupScreen(vm, screen)
                     is Screen.Read -> ReaderScreen(vm, screen.place)

@@ -7,6 +7,8 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -31,7 +33,9 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -49,6 +53,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.sparkbible.SparkViewModel
+import app.sparkbible.data.Devotions
 import app.sparkbible.data.Energy
 import app.sparkbible.data.Logic
 import app.sparkbible.data.Origin
@@ -94,6 +99,15 @@ private fun MoreRow(title: String, body: String, onClick: () -> Unit) {
 @Composable
 fun SparksScreen(vm: SparkViewModel) {
     val palette = LocalPalette.current
+    val books by vm.books.collectAsStateWithLifecycle()
+    val settings by vm.settings.collectAsStateWithLifecycle()
+    val words by vm.devotionWords.collectAsStateWithLifecycle()
+    var pick by rememberSaveable { mutableIntStateOf(0) }
+    val devotion = Devotions.all[pick % Devotions.all.size]
+    val name = books.getOrNull(devotion.book)?.name ?: "Passage"
+    val ref = if (devotion.start == devotion.end) "$name ${devotion.chapter}:${devotion.start}"
+    else "$name ${devotion.chapter}:${devotion.start}–${devotion.end}"
+    LaunchedEffect(devotion.id, settings.translation) { vm.showDevotion(devotion.id) }
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item {
             Text("Sparks", style = androidx.compose.material3.MaterialTheme.typography.displaySmall, modifier = Modifier.padding(top = 18.dp))
@@ -102,6 +116,33 @@ fun SparksScreen(vm: SparkViewModel) {
                 color = palette.muted,
                 modifier = Modifier.padding(top = 6.dp, bottom = 8.dp),
             )
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .background(palette.surface, RoundedCornerShape(20.dp))
+                    .border(1.dp, palette.line, RoundedCornerShape(20.dp))
+                    .padding(16.dp),
+            ) {
+                Text("A FEW MINUTES", color = palette.ember, fontSize = 12.sp, letterSpacing = 1.sp)
+                Text(devotion.title, fontWeight = FontWeight.SemiBold, fontSize = 18.sp, color = palette.ink, modifier = Modifier.padding(top = 6.dp))
+                Text(ref, color = palette.sage, modifier = Modifier.padding(top = 4.dp))
+                if (words.isNotBlank()) {
+                    Text(words, color = palette.ink, modifier = Modifier.padding(top = 8.dp))
+                }
+                Text(devotion.sentences, color = palette.muted, modifier = Modifier.padding(top = 8.dp))
+                PrimaryButton("Sit with this", Modifier.padding(top = 12.dp)) {
+                    vm.openSetup(Energy.LOW, Origin.Minute(devotion.id))
+                }
+                Text(
+                    "A different one",
+                    color = palette.sage,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier
+                        .padding(top = 8.dp)
+                        .clickable { pick = (pick + 1) % Devotions.all.size }
+                        .padding(vertical = 6.dp),
+                )
+            }
             PrimaryButton("Surprise me") {
                 val spark = SparkCatalog.sparks.random()
                 vm.openSetup(Energy.MEDIUM, Origin.SparkItem(spark.id))
@@ -361,7 +402,7 @@ fun SettingsScreen(vm: SparkViewModel) {
         item {
             Text("Translation", color = palette.muted)
             Text(
-                "All five are public domain and already on this phone. Switching never resets your place.",
+                "The ones on this phone work with no signal. NLT, NASB, and CSB open online, and only when a connection key is saved here.",
                 color = palette.muted,
             )
             Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
@@ -373,6 +414,26 @@ fun SettingsScreen(vm: SparkViewModel) {
                     ) { vm.setTranslation(translation.id) }
                 }
             }
+            Text("Connection key", color = palette.muted, modifier = Modifier.padding(top = 12.dp))
+            BasicTextField(
+                value = settings.scriptureKey,
+                onValueChange = { value -> vm.updateSettings { it.copy(scriptureKey = value.trim()) } },
+                textStyle = androidx.compose.material3.MaterialTheme.typography.bodyLarge.copy(color = palette.ink),
+                cursorBrush = SolidColor(palette.sage),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 6.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(palette.surface)
+                    .border(1.dp, palette.line, RoundedCornerShape(16.dp))
+                    .padding(14.dp),
+                decorationBox = { inner ->
+                    if (settings.scriptureKey.isBlank()) {
+                        Text("Paste the free API.Bible key", color = palette.muted)
+                    }
+                    inner()
+                },
+            )
         }
         item {
             Text("Voice speed", color = palette.muted)
@@ -383,9 +444,19 @@ fun SettingsScreen(vm: SparkViewModel) {
             }
         }
         item {
-            VoiceSection(settings.voiceEngine, settings.voiceName, settings.speechRate) { engine, voice ->
-                vm.updateSettings { it.copy(voiceEngine = engine, voiceName = voice) }
-            }
+            Text("Voice", color = palette.muted)
+            Text(
+                "The list is on its own screen, so Hear stays in reach.",
+                color = palette.muted,
+            )
+            Text(
+                "Choose a voice",
+                color = palette.sage,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier
+                    .clickable { vm.push(app.sparkbible.Screen.Voices) }
+                    .padding(vertical = 8.dp),
+            )
         }
         item {
             Text("Progress", color = palette.muted)
@@ -424,7 +495,7 @@ fun SettingsScreen(vm: SparkViewModel) {
         item {
             Text("A copy of this phone", color = palette.muted)
             Text(
-                "Save your garden, highlights, and place to a file. Bringing one back replaces what's here. No account.",
+                "Save your garden, highlights, place, and the way you read to a file. Bringing one back replaces what's here. No account.",
                 color = palette.muted,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.padding(top = 6.dp)) {
@@ -458,10 +529,50 @@ fun SettingsScreen(vm: SparkViewModel) {
                 }
             }
             Text(
-                "Scripture stays on this phone. The five translations above are public domain. Your place, highlights, and garden stay here too.",
+                "Scripture you choose stays with you. The offline translations are public domain. The online ones open only while you have a connection.",
                 color = palette.muted,
                 modifier = Modifier.padding(top = 12.dp, bottom = 28.dp),
             )
+        }
+    }
+}
+
+@Composable
+fun VoicesScreen(vm: SparkViewModel) {
+    val settings by vm.settings.collectAsStateWithLifecycle()
+    val palette = LocalPalette.current
+    val context = LocalContext.current
+    val current = if (settings.voiceEngine.isBlank() && settings.voiceName.isBlank()) {
+        "Phone default"
+    } else {
+        settings.voiceName.ifBlank { "Chosen voice" }
+    }
+    Column(Modifier.fillMaxSize()) {
+        Column(Modifier.padding(horizontal = 20.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Back", color = palette.sage, modifier = Modifier.clickable { vm.back() }.padding(vertical = 4.dp))
+            Text("Voice", style = androidx.compose.material3.MaterialTheme.typography.displaySmall)
+            Text(current, color = palette.ink, fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
+            Text(
+                "Hear",
+                color = palette.onSage,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier
+                    .semantics { contentDescription = "Hear the current voice" }
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(palette.sage)
+                    .clickable { hear(context, settings.speechRate, settings.voiceEngine, settings.voiceName) }
+                    .padding(horizontal = 18.dp, vertical = 12.dp),
+            )
+        }
+        Column(
+            Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp),
+        ) {
+            VoiceSection(settings.voiceEngine, settings.voiceName, settings.speechRate, hearOnRows = false) { engine, voice ->
+                vm.updateSettings { it.copy(voiceEngine = engine, voiceName = voice) }
+            }
         }
     }
 }
@@ -471,6 +582,7 @@ private fun VoiceSection(
     engine: String,
     voice: String,
     rate: Float,
+    hearOnRows: Boolean = true,
     onPick: (String, String) -> Unit,
 ) {
     val context = LocalContext.current
@@ -484,7 +596,11 @@ private fun VoiceSection(
     }
     Text("Voice", color = palette.muted)
     Text(
-        "Tap Hear on a row to try it. The name is the voice. Network and offline copies of the same voice are one row.",
+        if (hearOnRows) {
+            "Tap Hear on a row to try it. The name is the voice. Network and offline copies of the same voice are one row."
+        } else {
+            "Tap a row to choose it. Hear, above, plays the one you've chosen."
+        },
         color = palette.muted,
         modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
     )
@@ -495,6 +611,7 @@ private fun VoiceSection(
             selected = engine.isBlank() && voice.isBlank(),
             onSelect = { onPick("", "") },
             onHear = { hear(context, rate, "", "") },
+            showHear = hearOnRows,
         )
         if (!snapshot.ready) {
             Text("Looking for voices…", color = palette.muted)
@@ -520,6 +637,7 @@ private fun VoiceSection(
                         selected = engine == item.engine && (voice == item.name || voice in item.aliases),
                         onSelect = { onPick(item.engine, item.name) },
                         onHear = { hear(context, rate, item.engine, item.name) },
+                        showHear = hearOnRows,
                     )
                 }
             }
@@ -598,6 +716,7 @@ private fun VoiceRow(
     selected: Boolean,
     onSelect: () -> Unit,
     onHear: () -> Unit,
+    showHear: Boolean = true,
 ) {
     val palette = LocalPalette.current
     Row(
@@ -618,17 +737,19 @@ private fun VoiceRow(
             Text(title, fontWeight = FontWeight.SemiBold, color = palette.ink)
             Text(body, color = palette.muted, modifier = Modifier.padding(top = 2.dp))
         }
-        Text(
-            "Hear",
-            color = palette.onSage,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier
-                .semantics { contentDescription = "Hear $title" }
-                .clip(RoundedCornerShape(14.dp))
-                .background(palette.sage)
-                .clickable(onClick = onHear)
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-        )
+        if (showHear) {
+            Text(
+                "Hear",
+                color = palette.onSage,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier
+                    .semantics { contentDescription = "Hear $title" }
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(palette.sage)
+                    .clickable(onClick = onHear)
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+            )
+        }
     }
 }
 

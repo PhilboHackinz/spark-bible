@@ -185,6 +185,17 @@ fun ReaderScreen(vm: SparkViewModel, place: Place) {
                 )
             }
             item { Text("Tap a verse number to keep it. Only if you want to.", color = palette.muted) }
+            if (place.words.isNotBlank()) {
+                item {
+                    Text(place.words, color = palette.ink, style = style)
+                    Text(
+                        "From Narrow Fairway",
+                        color = palette.ember,
+                        modifier = Modifier.padding(top = 10.dp),
+                    )
+                    Text(place.prompt, color = palette.ink, modifier = Modifier.padding(top = 8.dp))
+                }
+            }
         }
         Column(
             Modifier.fillMaxWidth().background(palette.surface).padding(16.dp),
@@ -260,7 +271,7 @@ fun ReaderScreen(vm: SparkViewModel, place: Place) {
                     if (isPlaying) ListenService.toggle(context)
                     else ListenService.play(
                         context,
-                        place.verses.map { it.text },
+                        app.sparkbible.data.Logic.spokenLines(place),
                         if (active) spokenVerse else 0,
                         settings.speechRate,
                         settings.walking,
@@ -276,6 +287,17 @@ fun ReaderScreen(vm: SparkViewModel, place: Place) {
                         tint = palette.sage,
                     )
                 }
+            }
+            if (!app.sparkbible.data.Logic.lengthLocked(place.origin)) {
+                Text(
+                    "A little more",
+                    color = palette.sage,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier
+                        .semantics { contentDescription = "Add the next few verses" }
+                        .clickable { vm.extendReading() }
+                        .padding(vertical = 4.dp),
+                )
             }
             PrimaryButton("That's enough") {
                 Ambient.set(false)
