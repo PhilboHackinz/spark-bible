@@ -98,6 +98,9 @@ object Logic {
         "rev" to "Revelation",
     )
 
+    fun samePassage(openBook: Int, openChapter: Int, openVerse: Int, spark: Spark): Boolean =
+        openBook >= 0 && openBook == spark.book && openChapter == spark.chapter && openVerse == spark.start
+
     fun plan(): List<Int> {
         val nt = (39..65).toList()
         val john = nt.indexOf(42)

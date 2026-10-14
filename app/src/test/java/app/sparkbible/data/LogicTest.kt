@@ -103,10 +103,11 @@ class LogicTest {
     fun migrationsPreserveExistingRows() {
         assertEquals(1, SparkMigrations.MIGRATION_1_2.startVersion)
         assertEquals(2, SparkMigrations.MIGRATION_1_2.endVersion)
-        assertEquals(listOf(1 to 2), SparkMigrations.ALL.map { it.startVersion to it.endVersion })
+        assertEquals(listOf(1 to 2, 2 to 3), SparkMigrations.ALL.map { it.startVersion to it.endVersion })
         val sql = SparkMigrations.INDEX_MOMENTS_AT.uppercase()
         assertTrue(sql.contains("CREATE INDEX"))
         assertFalse(sql.contains("DROP"))
         assertFalse(sql.contains("DELETE"))
+        assertEquals(3, SparkMigrations.MIGRATION_2_3.endVersion)
     }
 }

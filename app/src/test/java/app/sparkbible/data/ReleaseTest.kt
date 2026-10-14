@@ -26,17 +26,24 @@ class ReleaseTest {
             reminderTime = "21:00",
             seenIntro = true,
         )
-        val stored = SettingsCodec.encode(settings.copy(scriptureKey = "key"))
+        val stored = SettingsCodec.encode(settings)
         val back = SettingsCodec.decode(stored)
-        assertEquals(settings.copy(scriptureKey = "key"), back)
+        assertEquals(settings, back)
     }
 
     @Test
-    fun onlineScriptureKeepsVerseOrder() {
-        val parsed = ScriptureText.fromApi(
-            """{"data":{"content":[{"type":"chapter","number":"1"},{"type":"verse","number":"1","text":"In the beginning"},{"type":"verse","number":"2","text":"The earth"}]}}""",
-        )
-        assertEquals(listOf(listOf("In the beginning", "The earth")), parsed)
+    fun anOldOnlineTranslationFallsBackToTheCopyOnThePhone() {
+        val back = SettingsCodec.decode("""{"translation":"nlt","fontSize":20.5}""")
+        assertEquals("web", back.translation)
+        assertEquals(20.5f, back.fontSize)
+    }
+
+    @Test
+    fun theDailySparkHidesAMatchingOpenPassage() {
+        val spark = Spark("x", "hope", "Today", 4, 31, 8, 8, "")
+        assertTrue(Logic.samePassage(4, 31, 8, spark))
+        assertFalse(Logic.samePassage(42, 2, 8, spark))
+        assertFalse(Logic.samePassage(-1, 31, 8, spark))
     }
 
     @Test

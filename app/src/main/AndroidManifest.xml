@@ -39,7 +39,8 @@
         <service
             android:name=".listen.ListenService"
             android:exported="false"
-            android:foregroundServiceType="mediaPlayback" />
+            android:foregroundServiceType="mediaPlayback"
+            android:stopWithTask="true" />
 
         <receiver
             android:name=".widget.SparkWidget"

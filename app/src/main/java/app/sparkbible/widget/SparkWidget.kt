@@ -35,9 +35,7 @@ class SparkWidget : AppWidgetProvider() {
             val info = Translations.get(saved)
             val short = info.short
             val spark = Logic.daily()
-            val (label, text) = if (info.online) {
-                "$short · Open the app" to "Today's verse is in an online translation."
-            } else try {
+            val (label, text) = try {
                 val book = app.bible.loadBook(spark.book)
                 val slice = book[spark.chapter - 1].subList(
                     (spark.start - 1).coerceAtLeast(0),

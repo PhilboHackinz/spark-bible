@@ -7,7 +7,9 @@ import android.content.Context
 import android.content.Intent
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
+import android.media.AudioFormat
 import android.media.AudioManager
+import android.media.AudioTrack
 import android.os.IBinder
 import android.os.PowerManager
 import android.speech.tts.TextToSpeech
@@ -20,6 +22,10 @@ import android.support.v4.media.session.PlaybackStateCompat
 import app.sparkbible.MainActivity
 import app.sparkbible.R
 import app.sparkbible.SparkApp
+import com.k2fsa.sherpa.onnx.OfflineTts
+import com.k2fsa.sherpa.onnx.OfflineTtsConfig
+import com.k2fsa.sherpa.onnx.OfflineTtsKokoroModelConfig
+import com.k2fsa.sherpa.onnx.OfflineTtsModelConfig
 import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -38,6 +44,11 @@ class ListenService : Service(), TextToSpeech.OnInitListener {
     private var walking = false
     private var title = "Spark Bible"
     private var voiceName = ""
+    private var engineId = ""
+    private var useKokoro = false
+    private var kokoro: OfflineTts? = null
+    private var track: AudioTrack? = null
+    private var speakToken = 0
     private var boundEngine: String? = null
     private var currentText = ""
     private lateinit var session: MediaSessionCompat
@@ -143,6 +154,7 @@ class ListenService : Service(), TextToSpeech.OnInitListener {
                     title = intent.getStringExtra(EXTRA_TITLE) ?: "Spark Bible"
                     voiceName = intent.getStringExtra(EXTRA_VOICE) ?: ""
                     val enginePkg = intent.getStringExtra(EXTRA_ENGINE) ?: ""
+                    engineId = enginePkg
                     val sleepMinutes = intent.getIntExtra(EXTRA_SLEEP, 0)
                     playing = true
                     ListenBus.title.value = title
@@ -181,6 +193,10 @@ class ListenService : Service(), TextToSpeech.OnInitListener {
 
     override fun onDestroy() {
         playing = false
+        speakToken += 1
+        stopTrack()
+        kokoro?.release()
+        kokoro = null
         tts?.stop()
         tts?.shutdown()
         session.release()
@@ -189,7 +205,25 @@ class ListenService : Service(), TextToSpeech.OnInitListener {
         super.onDestroy()
     }
 
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        shutdown()
+        super.onTaskRemoved(rootIntent)
+    }
+
     private fun prepare(enginePkg: String) {
+        useKokoro = enginePkg == KokoroFiles.ENGINE
+        if (useKokoro) {
+            tts?.stop()
+            tts?.shutdown()
+            tts = null
+            ready = KokoroFiles.ready(this)
+            if (!ready) {
+                ListenBus.error.value = true
+                ListenBus.playing.value = false
+                playing = false
+            }
+            return
+        }
         if (tts != null && boundEngine == enginePkg) return
         tts?.stop()
         tts?.shutdown()
@@ -215,6 +249,10 @@ class ListenService : Service(), TextToSpeech.OnInitListener {
     }
 
     private fun speak() {
+        if (useKokoro) {
+            speakKokoro()
+            return
+        }
         val engine = tts ?: return
         if (!playing) return
         if (verseIndex >= verses.size) {
@@ -233,6 +271,8 @@ class ListenService : Service(), TextToSpeech.OnInitListener {
     private fun pauseInternal() {
         playing = false
         pending = false
+        speakToken += 1
+        stopTrack()
         tts?.stop()
         ListenBus.playing.value = false
         ListenBus.breath.value = false
@@ -290,6 +330,8 @@ class ListenService : Service(), TextToSpeech.OnInitListener {
         ListenBus.sleepMinutes.value = 0
         playing = false
         pending = false
+        speakToken += 1
+        stopTrack()
         tts?.stop()
         ListenBus.playing.value = false
         ListenBus.breath.value = false
@@ -335,6 +377,120 @@ class ListenService : Service(), TextToSpeech.OnInitListener {
                     .setShowActionsInCompactView(0, 1),
             )
             .build()
+    }
+
+    private fun speakKokoro() {
+        if (!playing) return
+        if (verseIndex >= verses.size) {
+            finishSpeech()
+            return
+        }
+        val index = verseIndex
+        val token = ++speakToken
+        currentText = verses[index]
+        ListenBus.verse.value = index
+        ListenBus.word.value = -1
+        ListenBus.playing.value = true
+        ListenBus.breath.value = false
+        updateNotification()
+        publishState()
+        scope.launch {
+            val audio = runCatching { kokoroEngine().generate(currentText, sid = 0, speed = rate) }.getOrNull()
+            if (token != speakToken || !playing || verseIndex != index) return@launch
+            if (audio == null) {
+                main.post {
+                    ListenBus.error.value = true
+                    pauseInternal()
+                }
+                return@launch
+            }
+            playSamples(audio.samples, audio.sampleRate, token)
+            if (token != speakToken || !playing) return@launch
+            main.post {
+                if (token != speakToken || !playing) return@post
+                verseIndex += 1
+                if (verseIndex >= verses.size) {
+                    finishSpeech()
+                } else if (walking) {
+                    ListenBus.breath.value = true
+                    main.postDelayed({ if (playing) speak() }, 1600)
+                } else {
+                    main.postDelayed({ if (playing) speak() }, 220)
+                }
+            }
+        }
+    }
+
+    private fun kokoroEngine(): OfflineTts {
+        kokoro?.let { return it }
+        val root = KokoroFiles.root(this) ?: error("Kokoro is not on this phone.")
+        val created = OfflineTts(
+            config = OfflineTtsConfig(
+                model = OfflineTtsModelConfig(
+                    kokoro = OfflineTtsKokoroModelConfig(
+                        model = java.io.File(root, "model.onnx").path,
+                        voices = java.io.File(root, "voices.bin").path,
+                        tokens = java.io.File(root, "tokens.txt").path,
+                        dataDir = java.io.File(root, "espeak-ng-data").path,
+                    ),
+                    numThreads = 2,
+                ),
+            ),
+        )
+        kokoro = created
+        return created
+    }
+
+    private fun playSamples(samples: FloatArray, sampleRate: Int, token: Int) {
+        if (samples.isEmpty() || token != speakToken) return
+        val buffer = maxOf(samples.size, AudioTrack.getMinBufferSize(sampleRate, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_FLOAT))
+        val player = AudioTrack.Builder()
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build(),
+            )
+            .setAudioFormat(
+                AudioFormat.Builder()
+                    .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
+                    .setSampleRate(sampleRate)
+                    .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                    .build(),
+            )
+            .setBufferSizeInBytes(buffer * 4)
+            .setTransferMode(AudioTrack.MODE_STATIC)
+            .build()
+        track = player
+        if (token != speakToken) {
+            player.release()
+            return
+        }
+        player.write(samples, 0, samples.size, AudioTrack.WRITE_BLOCKING)
+        player.play()
+        val frames = samples.size
+        val ms = (frames * 1000L / sampleRate).coerceAtLeast(1L)
+        try {
+            Thread.sleep(ms)
+        } catch (_: InterruptedException) {
+            return
+        }
+        if (track == player) {
+            player.stop()
+            player.release()
+            track = null
+        }
+    }
+
+    private fun stopTrack() {
+        val player = track
+        track = null
+        if (player == null) return
+        runCatching {
+            player.pause()
+            player.flush()
+            player.release()
+        }
     }
 
     private fun openIntent(): PendingIntent {

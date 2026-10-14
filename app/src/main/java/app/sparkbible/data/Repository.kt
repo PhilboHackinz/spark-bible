@@ -136,7 +136,6 @@ class Repository(
 
     private suspend fun bind() {
         bible.translation = settings.current().translation
-        bible.scriptureKey = settings.current().scriptureKey
     }
 
     private fun verseText(pin: VersePin): String? {

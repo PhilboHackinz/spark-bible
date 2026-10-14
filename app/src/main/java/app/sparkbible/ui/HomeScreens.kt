@@ -105,16 +105,24 @@ fun TodayScreen(vm: SparkViewModel) {
                 )
             }
             val done = progress.sparkDoneOn == today.toString()
+            val same = Logic.samePassage(progress.openBook, progress.openChapter, progress.openVerse, daily)
             Text(
                 if (done) "You already sat with this. Opening it again still counts." else "Picked for today. No catching up.",
                 color = palette.muted,
                 modifier = Modifier.padding(top = 6.dp),
             )
-            PrimaryButton(if (done) "Open it again" else "Sit with this", Modifier.padding(top = 12.dp)) {
-                vm.openDaily()
+            PrimaryButton(
+                when {
+                    same -> "Return to it"
+                    done -> "Open it again"
+                    else -> "Sit with this"
+                },
+                Modifier.padding(top = 12.dp),
+            ) {
+                if (same) vm.resume() else vm.openDaily()
             }
         }
-        if (progress.openBook >= 0) {
+        if (progress.openBook >= 0 && !Logic.samePassage(progress.openBook, progress.openChapter, progress.openVerse, daily)) {
             SoftCard {
                 Text("Still open", color = palette.ember, fontSize = 12.sp)
                 Text(progress.openLabel.ifBlank { "A passage" }, style = androidx.compose.material3.MaterialTheme.typography.titleMedium)

@@ -5,7 +5,6 @@ data class TranslationInfo(
     val name: String,
     val short: String,
     val note: String,
-    val online: Boolean = false,
 )
 
 object Translations {
@@ -47,25 +46,10 @@ object Translations {
             "Modern wording. Public domain. Already on this phone.",
         ),
         TranslationInfo(
-            "nlt",
-            "New Living Translation",
-            "NLT",
-            "Online only. Needs the connection key.",
-            online = true,
-        ),
-        TranslationInfo(
-            "nasb",
-            "New American Standard",
-            "NASB",
-            "Online only. Needs the connection key.",
-            online = true,
-        ),
-        TranslationInfo(
-            "csb",
-            "Christian Standard Bible",
-            "CSB",
-            "Online only. Needs the connection key.",
-            online = true,
+            "lsv",
+            "Literal Standard Version",
+            "LSV",
+            "Word for word. On this phone. Literal Standard Version (LSV), Covenant Press.",
         ),
     )
 

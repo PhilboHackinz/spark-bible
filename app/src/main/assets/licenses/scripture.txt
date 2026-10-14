@@ -1,13 +1,21 @@
-Spark Bible includes five public-domain Bible translations:
+Spark Bible includes these Bible translations on the phone. None of them need a connection.
+
+Public domain:
 
 - World English Bible
 - King James Version
 - American Standard Version
 - Geneva Bible (1599)
 - Douay-Rheims American Edition (1899)
+- Berean Standard Bible, dedicated to the public domain on April 30, 2023
 
-The verse files were prepared from the public-domain texts published by
+The older verse files were prepared from the public-domain texts published by
 midvash/bible-data (https://github.com/midvash/bible-data).
 
+Creative Commons Attribution-ShareAlike 4.0:
+
+- Literal Standard Version (LSV)
+  Copyright © 2020 Covenant Press and the Covenant Christian Coalition.
+  The wording is unchanged. See licenses/lsv.txt.
+
 These scripture texts are not covered by the app's code license.
-They are free to use in the United States.

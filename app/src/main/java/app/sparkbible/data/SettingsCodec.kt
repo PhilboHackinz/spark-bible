@@ -20,7 +20,6 @@ object SettingsCodec {
         put("reminderOn", settings.reminderOn)
         put("reminderTime", settings.reminderTime)
         put("seenIntro", settings.seenIntro)
-        put("scriptureKey", settings.scriptureKey)
     }.toString()
 
     fun decode(json: String?): Settings {
@@ -35,7 +34,6 @@ object SettingsCodec {
             speechRate = stored.optDouble("speechRate", 1.0).toFloat(),
             voiceEngine = stored.optString("voiceEngine", ""),
             voiceName = stored.optString("voiceName", ""),
-            translation = stored.optString("translation", "web").ifBlank { "web" },
             ambient = stored.optBoolean("ambient", false),
             walking = stored.optBoolean("walking", false),
             progressStyle = runCatching {
@@ -45,7 +43,10 @@ object SettingsCodec {
             reminderOn = stored.optBoolean("reminderOn", false),
             reminderTime = stored.optString("reminderTime", "08:30").ifBlank { "08:30" },
             seenIntro = stored.optBoolean("seenIntro", false),
-            scriptureKey = stored.optString("scriptureKey", ""),
+            translation = stored.optString("translation", "web").let { id ->
+                val chosen = id.ifBlank { "web" }
+                if (Translations.all.any { it.id == chosen }) chosen else "web"
+            },
         )
     }
 }

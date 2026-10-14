@@ -8,38 +8,40 @@ Spark Bible is a native Kotlin app (Jetpack Compose, Room, offline text). It is 
 
 Android 8 or newer.
 
-The [v1.5.0 release](https://github.com/PhilboHackinz/spark-bible/releases/tag/v1.5.0) has a signed APK. Download it, open it, and allow install from your browser or files app if Android asks. Installing over 1.4.0 keeps your garden, highlights, and place.
+The [v1.8.0 release](https://github.com/PhilboHackinz/spark-bible/releases/tag/v1.8.0) has a signed APK. Download it, open it, and allow install from your browser or files app if Android asks. Installing over 1.7.0 keeps your garden, highlights, and place.
 
 If you later install a build you made yourself, uninstall the release first. A build from source is signed with a different key.
 
 ## What it does
 
-- Energy check starts at one verse. A little more is there if you want a short passage or a longer stretch
-- Read, listen, or both, with follow-along highlighting
+- Energy check starts at one verse. A little more is eight more verses
+- Read, listen, or both. Phone voices highlight the verse as it is spoken. Kokoro highlights the verse, not each word
+- Closing the app stops the voice
 - The screen stays awake while you are reading
-- Listening keeps going if you leave the app, with an optional sleep timer
-- A garden that sprouts and blooms, or a sky that forms shapes. Nothing resets
+- A garden that sprouts and blooms, or a sky that forms shapes. Nothing resets. Finished books stand as mini books on a coffee table in the garden
+- If you are already in today's spark, Today does not show that same passage a second time
 - Daily spark widget opens today's verse. Reminders stay gentle
-- Five public-domain translations, switchable in Settings
-- Voices are named by accent and person, with Hear on each row. Voices that need a connection hide when you are offline
-- Phone voices, plus RHVoice, eSpeak NG, or SherpaTTS once those engines are installed
+- Translations on the phone, switchable in Settings. No online Bible connection
+- The phone's own voice is the default. Kokoro is optional and downloads only when you choose it (about 300 MB, once). RHVoice, eSpeak NG, or SherpaTTS still show up if they are installed
 - Settings can save a copy of your garden, highlights, and place, and bring that file back. No account
 
 Your place, highlights, and garden stay on the phone. There is no account.
 
 ## Translations
 
-All five ship inside the app and are public domain:
+These ship inside the app:
 
 | Id | Text |
 | --- | --- |
-| web | World English Bible |
-| kjv | King James Version |
-| asv | American Standard Version |
-| geneva | Geneva Bible (1599) |
-| dra | Douay-Rheims American Edition (1899) |
+| web | World English Bible (public domain) |
+| kjv | King James Version (public domain) |
+| asv | American Standard Version (public domain) |
+| geneva | Geneva Bible, 1599 (public domain) |
+| dra | Douay-Rheims American Edition, 1899 (public domain) |
+| bsb | Berean Standard Bible, public domain April 30, 2023 |
+| lsv | Literal Standard Version. Wording unchanged. Copyright © 2020 Covenant Press and the Covenant Christian Coalition. CC BY-SA 4.0 |
 
-Verse text is stored as JSON under `app/src/main/assets/bible/`. The files were prepared from the public-domain texts in [midvash/bible-data](https://github.com/midvash/bible-data).
+The older public-domain files were prepared from [midvash/bible-data](https://github.com/midvash/bible-data). LSV was prepared from the eBible.org USFM release. Credits are in `app/src/main/assets/licenses/`.
 
 ## Build
 
@@ -64,7 +66,7 @@ export SPARK_KEY_PASSWORD=...
 ./gradlew :app:assembleRelease
 ```
 
-The signing key is not in this repository. Saved gardens, highlights, and places are kept when the database changes. Version 1 to 2 only adds an index.
+The signing key is not in this repository. Saved gardens, highlights, and places are kept when the database changes. Version 1 to 2 adds an index. Version 2 to 3 adds the list of finished books.
 
 ## Fonts
 
@@ -74,4 +76,4 @@ Literata, Fraunces, and Lexend are used under the SIL Open Font License, Version
 
 The app code is under the MIT License. See [LICENSE](LICENSE).
 
-The scripture texts are public domain and are not part of that grant. Fonts stay under the SIL Open Font License. See [NOTICE](NOTICE).
+Public-domain scripture is not part of that grant. The Literal Standard Version stays under CC BY-SA 4.0; the wording is unchanged. Fonts stay under the SIL Open Font License. The optional Kokoro voice uses sherpa-onnx (Apache 2.0) and ONNX Runtime (MIT). See [NOTICE](NOTICE).

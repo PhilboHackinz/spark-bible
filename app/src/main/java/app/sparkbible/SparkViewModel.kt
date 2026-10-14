@@ -74,7 +74,6 @@ class SparkViewModel(app: Application) : AndroidViewModel(app) {
             spark.repo.ensure()
             val current = spark.settings.current()
             spark.bible.translation = current.translation
-            spark.bible.scriptureKey = current.scriptureKey
             books.value = spark.bible.index()
             refreshDailyWords()
             SparkWidget.refresh(spark)
@@ -94,7 +93,6 @@ class SparkViewModel(app: Application) : AndroidViewModel(app) {
             val devotion = app.sparkbible.data.Devotions.get(id) ?: return@launch
             val current = spark.settings.current()
             spark.bible.translation = current.translation
-            spark.bible.scriptureKey = current.scriptureKey
             val text = runCatching {
                 val chapter = spark.bible.loadBook(devotion.book).getOrNull(devotion.chapter - 1) ?: return@runCatching ""
                 (devotion.start..devotion.end).mapNotNull { verse -> chapter.getOrNull(verse - 1) }.joinToString("\n")
@@ -249,7 +247,6 @@ class SparkViewModel(app: Application) : AndroidViewModel(app) {
             val index = ListenBus.verse.value
             spark.settings.update { it.copy(translation = id) }
             spark.bible.translation = id
-            spark.bible.scriptureKey = spark.settings.current().scriptureKey
             books.value = spark.bible.index()
             refreshDailyWords()
             val last = _stack.value.lastOrNull()

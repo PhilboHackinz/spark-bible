@@ -1,0 +1,18 @@
+sherpa-onnx and ONNX Runtime
+
+Spark Bible can use an optional Kokoro voice. The speech library is
+sherpa-onnx 1.12.15 (https://github.com/k2-fsa/sherpa-onnx), including
+the Kotlin classes under com.k2fsa.sherpa.onnx.
+
+Copyright (c) 2023 Xiaomi Corporation
+Copyright for the native libraries belongs to the sherpa-onnx authors
+and the Next-gen Kaldi project.
+
+Licensed under the Apache License, Version 2.0.
+http://www.apache.org/licenses/LICENSE-2.0
+
+The bundled libonnxruntime.so is ONNX Runtime, MIT License.
+https://github.com/microsoft/onnxruntime
+
+The Kokoro model (kokoro-en-v0_19) is not inside the app. It downloads
+only when that voice is chosen, from the sherpa-onnx tts-models release.

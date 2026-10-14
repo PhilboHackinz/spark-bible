@@ -61,6 +61,7 @@ import app.sparkbible.data.ProgressStyle
 import app.sparkbible.data.SparkCatalog
 import app.sparkbible.data.ThemePref
 import app.sparkbible.data.Translations
+import app.sparkbible.listen.KokoroFiles
 import app.sparkbible.listen.ListenService
 import app.sparkbible.listen.OpenVoices
 import app.sparkbible.listen.VoiceProbe
@@ -402,7 +403,7 @@ fun SettingsScreen(vm: SparkViewModel) {
         item {
             Text("Translation", color = palette.muted)
             Text(
-                "The ones on this phone work with no signal. NLT, NASB, and CSB open online, and only when a connection key is saved here.",
+                "Every translation here is already on this phone. None of them need a connection.",
                 color = palette.muted,
             )
             Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
@@ -414,26 +415,6 @@ fun SettingsScreen(vm: SparkViewModel) {
                     ) { vm.setTranslation(translation.id) }
                 }
             }
-            Text("Connection key", color = palette.muted, modifier = Modifier.padding(top = 12.dp))
-            BasicTextField(
-                value = settings.scriptureKey,
-                onValueChange = { value -> vm.updateSettings { it.copy(scriptureKey = value.trim()) } },
-                textStyle = androidx.compose.material3.MaterialTheme.typography.bodyLarge.copy(color = palette.ink),
-                cursorBrush = SolidColor(palette.sage),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 6.dp)
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(palette.surface)
-                    .border(1.dp, palette.line, RoundedCornerShape(16.dp))
-                    .padding(14.dp),
-                decorationBox = { inner ->
-                    if (settings.scriptureKey.isBlank()) {
-                        Text("Paste the free API.Bible key", color = palette.muted)
-                    }
-                    inner()
-                },
-            )
         }
         item {
             Text("Voice speed", color = palette.muted)
@@ -529,7 +510,7 @@ fun SettingsScreen(vm: SparkViewModel) {
                 }
             }
             Text(
-                "Scripture you choose stays with you. The offline translations are public domain. The online ones open only while you have a connection.",
+                "Scripture you choose stays with you. The translations on this phone need no connection. The Literal Standard Version is shared by Covenant Press, wording unchanged.",
                 color = palette.muted,
                 modifier = Modifier.padding(top = 12.dp, bottom = 28.dp),
             )
@@ -587,6 +568,11 @@ private fun VoiceSection(
 ) {
     val context = LocalContext.current
     val palette = LocalPalette.current
+    val kokoroPhase by KokoroFiles.phase.collectAsStateWithLifecycle()
+    val kokoroProgress by KokoroFiles.progress.collectAsStateWithLifecycle()
+    val kokoroMessage by KokoroFiles.message.collectAsStateWithLifecycle()
+    LaunchedEffect(Unit) { KokoroFiles.refresh(context) }
+    val kokoroReady = kokoroPhase == "ready"
     var snapshot by remember { mutableStateOf(VoiceSnapshot()) }
     var look by remember { mutableStateOf(0) }
     DisposableEffect(look) {
@@ -605,6 +591,21 @@ private fun VoiceSection(
         modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
     )
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        VoiceRow(
+            title = "Kokoro",
+            body = when {
+                kokoroReady -> "On this phone. One calm voice. It works with no signal."
+                kokoroPhase == "downloading" -> "Bringing it to this phone… ${(kokoroProgress * 100).toInt()}%"
+                kokoroPhase == "failed" -> kokoroMessage.ifBlank { "The voice didn't finish downloading. You can try again." }
+                else -> "A free voice. It downloads once, then stays on this phone."
+            },
+            selected = engine == KokoroFiles.ENGINE,
+            onSelect = {
+                if (kokoroReady) onPick(KokoroFiles.ENGINE, "Kokoro") else KokoroFiles.download(context)
+            },
+            onHear = { hear(context, rate, KokoroFiles.ENGINE, "Kokoro") },
+            showHear = hearOnRows && kokoroReady,
+        )
         VoiceRow(
             title = "Phone default",
             body = "Whatever Android is set to use.",

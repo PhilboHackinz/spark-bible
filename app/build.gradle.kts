@@ -13,8 +13,11 @@ android {
         applicationId = "app.sparkbible"
         minSdk = 26
         targetSdk = 35
-        versionCode = 14
-        versionName = "1.7.0"
+        versionCode = 15
+        versionName = "1.8.0"
+        ndk {
+            abiFilters += listOf("armeabi-v7a", "arm64-v8a")
+        }
     }
 
     val storePath = System.getenv("SPARK_STORE_FILE")
@@ -78,7 +81,9 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("androidx.work:work-runtime-ktx:2.10.0")
     implementation("androidx.media:media:1.7.0")
+    implementation("org.apache.commons:commons-compress:1.27.1")
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
 }
 
 ksp {

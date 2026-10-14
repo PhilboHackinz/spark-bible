@@ -4,10 +4,24 @@ Copyright (c) 2026 PhilboHackinz
 The Kotlin app is under the MIT License. See LICENSE.
 
 Scripture
-The five bundled translations are public domain. Credits and sources are in
-app/src/main/assets/licenses/scripture.txt.
+Credits and sources are in app/src/main/assets/licenses/scripture.txt.
+Public-domain texts: World English Bible, King James Version, American
+Standard Version, Geneva Bible (1599), Douay-Rheims American Edition (1899),
+and the Berean Standard Bible (public domain April 30, 2023).
+
+Literal Standard Version (LSV)
+Copyright © 2020 Covenant Press and the Covenant Christian Coalition.
+The wording in this app is unchanged. Shared under CC BY-SA 4.0.
+https://creativecommons.org/licenses/by-sa/4.0/
+See app/src/main/assets/licenses/lsv.txt.
 
 Fonts
 Literata, Fraunces, and Lexend are under the SIL Open Font License 1.1.
 Copyright lines and the license text ship with the app in
 app/src/main/assets/licenses/.
+
+Voice engine
+The optional Kokoro voice uses sherpa-onnx (Apache License 2.0) and
+ONNX Runtime. Those libraries are in app/src/main/jniLibs. The Kokoro
+model is not in the app; it is downloaded only if that voice is chosen.
+See app/src/main/assets/licenses/sherpa-onnx.txt.

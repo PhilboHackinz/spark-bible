@@ -141,15 +141,15 @@ private fun GardenBed(plants: List<PlantEntity>, shelfCount: Int, onShelf: () ->
                 .background(paper)
                 .semantics {
                     contentDescription = if (plants.isEmpty()) {
-                        "Garden plate. Nothing planted yet. A shelf waits in the distance."
+                        "Garden plate. Nothing planted yet. A small table waits at the edge."
                     } else {
-                        "Garden plate. ${plants.size} blooms. A shelf waits in the distance."
+                        "Garden plate. ${plants.size} blooms. A small table waits at the edge."
                     }
                 },
         ) {
             val soil = size.height * 0.78f
             drawRect(Color(0xFFE4D3B4), topLeft = Offset(0f, soil), size = androidx.compose.ui.geometry.Size(size.width, size.height - soil))
-            drawShelf(Offset(size.width * 0.5f, size.height * 0.18f), shelfCount)
+            drawTable(Offset(size.width * 0.78f, soil), shelfCount)
             val elapsed = (frame - started) / 1_000_000f
             plants.takeLast(18).forEachIndexed { index, plant ->
                 val h = plant.id.fold(0) { acc, c -> acc * 31 + c.code }
@@ -161,10 +161,10 @@ private fun GardenBed(plants: List<PlantEntity>, shelfCount: Int, onShelf: () ->
         }
         Box(
             Modifier
-                .align(Alignment.TopCenter)
-                .padding(top = 28.dp)
-                .size(width = 140.dp, height = 64.dp)
-                .semantics { contentDescription = "Shelf in the distance. Open it." }
+                .align(Alignment.BottomEnd)
+                .padding(end = 8.dp, bottom = 36.dp)
+                .size(width = 150.dp, height = 96.dp)
+                .semantics { contentDescription = "Coffee table. Open the books." }
                 .clickable(onClick = onShelf),
         )
     }
@@ -179,11 +179,11 @@ private fun Shelf(names: List<String>, onBack: () -> Unit) {
             .background(paper)
             .padding(18.dp),
     ) {
-        Text("Back", color = Color(0xFF2C6848), modifier = Modifier.clickable(onClick = onBack).padding(bottom = 8.dp))
-        Text("The shelf", color = ink, fontSize = 22.sp)
+        Text("Back to the garden", color = Color(0xFF2C6848), modifier = Modifier.clickable(onClick = onBack).padding(bottom = 8.dp))
+        Text("The table", color = ink, fontSize = 22.sp)
         if (names.isEmpty()) {
             Text(
-                "Nothing standing here yet. Finish a book and it will.",
+                "The table is clear. Finish a book and a small one will stand here.",
                 color = Color(0xFF5C5148),
                 modifier = Modifier.padding(top = 8.dp),
             )
@@ -195,9 +195,9 @@ private fun Shelf(names: List<String>, onBack: () -> Unit) {
                     modifier = Modifier
                         .padding(top = 10.dp)
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(Color(0xFF6B4428))
-                        .padding(horizontal = 12.dp, vertical = 14.dp),
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(bookColors[name.length % bookColors.size])
+                        .padding(horizontal = 12.dp, vertical = 18.dp),
                 )
             }
         }
@@ -218,16 +218,31 @@ private val bloomColors = listOf(
     Color(0xFF8C3A4B),
 )
 
-private fun DrawScope.drawShelf(center: Offset, count: Int) {
-    drawLine(Color(0xFF6B4428), Offset(center.x - 58f, center.y), Offset(center.x + 58f, center.y), strokeWidth = 4f)
+private val bookColors = listOf(
+    Color(0xFF6B2E2A),
+    Color(0xFF1F4D3A),
+    Color(0xFF3E4C73),
+    Color(0xFF7A4E28),
+    Color(0xFF5C3A55),
+)
+
+private fun DrawScope.drawTable(center: Offset, count: Int) {
+    drawLine(Color(0xFF6B4428), Offset(center.x - 62f, center.y), Offset(center.x - 54f, center.y + 22f), strokeWidth = 4f)
+    drawLine(Color(0xFF6B4428), Offset(center.x + 62f, center.y), Offset(center.x + 54f, center.y + 22f), strokeWidth = 4f)
+    drawRect(
+        Color(0xFF8C5A32),
+        topLeft = Offset(center.x - 78f, center.y - 8f),
+        size = androidx.compose.ui.geometry.Size(156f, 12f),
+    )
     val shown = count.coerceAtMost(7)
     if (shown == 0) return
-    val left = center.x - shown * 7f
+    val left = center.x - shown * 8f
     repeat(shown) { index ->
+        val height = 18f + (index % 3) * 5f
         drawRect(
-            Color(0xFF8C5A32),
-            topLeft = Offset(left + index * 14f, center.y - 22f),
-            size = androidx.compose.ui.geometry.Size(8f, 22f),
+            bookColors[index % bookColors.size],
+            topLeft = Offset(left + index * 16f, center.y - 8f - height),
+            size = androidx.compose.ui.geometry.Size(11f, height),
         )
     }
 }
