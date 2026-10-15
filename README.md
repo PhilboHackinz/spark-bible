@@ -8,7 +8,7 @@ Spark Bible is a native Kotlin app (Jetpack Compose, Room, offline text). It is 
 
 Android 8 or newer.
 
-The [v1.8.3 release](https://github.com/PhilboHackinz/spark-bible/releases/tag/v1.8.3) has a signed APK. Download it, open it, and allow install from your browser or files app if Android asks. Installing over 1.8.1 keeps your garden, highlights, and place.
+The [v1.8.3 release](https://github.com/PhilboHackinz/spark-bible/releases/tag/v1.8.3) has a signed APK. Download it, open it, and allow install from your browser or files app if Android asks. Installing over 1.8.2 keeps your garden, highlights, and place.
 
 If you later install a build you made yourself, uninstall the release first. A build from source is signed with a different key.
 
