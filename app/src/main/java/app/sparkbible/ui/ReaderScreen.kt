@@ -153,7 +153,7 @@ fun ReaderScreen(vm: SparkViewModel, place: Place) {
         }
         if (speechError) {
             Text(
-                "Listening isn't available on this device. Reading still works.",
+                "The voice didn't speak just then. Reading still works.",
                 color = palette.ember,
                 modifier = Modifier.padding(horizontal = 20.dp),
             )

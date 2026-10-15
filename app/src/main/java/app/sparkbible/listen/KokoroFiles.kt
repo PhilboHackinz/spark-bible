@@ -35,6 +35,7 @@ object KokoroFiles {
         ),
     )
     val chipNote = MutableStateFlow("")
+    val speakNote = MutableStateFlow("")
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var job: Job? = null
@@ -43,6 +44,14 @@ object KokoroFiles {
 
     fun noteChipFellBack() {
         chipNote.value = "This phone kept the main processor. The AI chip couldn't take the voice."
+    }
+
+    fun noteSpeakFailed() {
+        speakNote.value = "That voice didn't speak. The full voice is still here."
+    }
+
+    fun clearSpeakNote() {
+        speakNote.value = ""
     }
 
     fun dir(context: Context, size: String = FULL): File =
@@ -103,8 +112,8 @@ object KokoroFiles {
         File(root, "model.int8.onnx").takeIf { it.isFile } ?: File(root, "model.onnx")
 
     private fun complete(dir: File): Boolean =
-        model(dir).isFile &&
-            File(dir, "voices.bin").isFile &&
+        model(dir).length() > 20_000_000L &&
+            File(dir, "voices.bin").length() > 1_000_000L &&
             File(dir, "tokens.txt").isFile &&
             File(dir, "espeak-ng-data").isDirectory
 

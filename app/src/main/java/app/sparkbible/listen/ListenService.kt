@@ -54,8 +54,10 @@ class ListenService : Service(), TextToSpeech.OnInitListener {
     private var voiceName = ""
     private var engineId = ""
     private var useKokoro = false
-    private var kokoro: OfflineTts? = null
-    private val kokoroLock = Mutex()
+    private val poolGuard = Any()
+    private val poolAll = ArrayList<OfflineTts>(2)
+    private val poolFree = ArrayDeque<OfflineTts>(2)
+    private var poolExtraFailed = false
     private var stream: AudioTrack? = null
     private var streamRate = 0
     private var framesQueued = 0
@@ -248,8 +250,7 @@ class ListenService : Service(), TextToSpeech.OnInitListener {
         playing = false
         speakToken += 1
         stopTrack()
-        kokoro?.release()
-        kokoro = null
+        releaseKokoro()
         tts?.stop()
         tts?.shutdown()
         session.release()
@@ -510,26 +511,34 @@ class ListenService : Service(), TextToSpeech.OnInitListener {
         return writeSilence(120, token)
     }
 
-    private fun kokoroEngine(): OfflineTts {
-        val key = "$kokoroSize|$kokoroRun"
-        if (kokoro != null && loadedKey == key) return kokoro!!
-        kokoro?.release()
-        kokoro = null
-        loadedKey = null
-        val created = try {
-            buildKokoro(kokoroRun)
-        } catch (_: Exception) {
-            if (kokoroRun == KokoroFiles.CPU) throw IllegalStateException("Kokoro didn't start.")
-            kokoroRun = KokoroFiles.CPU
-            KokoroFiles.noteChipFellBack()
-            buildKokoro(KokoroFiles.CPU)
+    private fun giveKokoro(engine: OfflineTts) {
+        synchronized(poolGuard) {
+            if (poolAll.contains(engine)) poolFree.addLast(engine) else runCatching { engine.release() }
         }
-        kokoro = created
-        loadedKey = "$kokoroSize|$kokoroRun"
-        return created
     }
 
-    private fun buildKokoro(provider: String): OfflineTts {
+    private fun releaseKokoro() {
+        synchronized(poolGuard) {
+            poolAll.forEach { runCatching { it.release() } }
+            poolAll.clear()
+            poolFree.clear()
+            poolExtraFailed = false
+            loadedKey = null
+        }
+    }
+
+    private fun buildKokoro(provider: String, threads: Int): OfflineTts {
+        return try {
+            createKokoro(provider, threads)
+        } catch (error: Exception) {
+            if (provider == KokoroFiles.CPU) throw error
+            kokoroRun = KokoroFiles.CPU
+            KokoroFiles.noteChipFellBack()
+            createKokoro(KokoroFiles.CPU, threads)
+        }
+    }
+
+    private fun createKokoro(provider: String, threads: Int): OfflineTts {
         val root = KokoroFiles.root(this, kokoroSize) ?: error("Kokoro is not on this phone.")
         return OfflineTts(
             config = OfflineTtsConfig(
@@ -540,19 +549,76 @@ class ListenService : Service(), TextToSpeech.OnInitListener {
                         tokens = java.io.File(root, "tokens.txt").path,
                         dataDir = java.io.File(root, "espeak-ng-data").path,
                     ),
-                    numThreads = 4,
+                    numThreads = threads,
                     provider = provider,
                 ),
             ),
         )
     }
 
-    private suspend fun synthesize(text: String, speed: Float): Pair<FloatArray, Int>? = kokoroLock.withLock {
+    private suspend fun synthesize(text: String, speed: Float): Pair<FloatArray, Int>? {
         if (text.isBlank()) return null
-        runCatching {
-            val audio = kokoroEngine().generate(text, sid = 0, speed = speed)
-            trimSilence(audio.samples, audio.sampleRate) to audio.sampleRate
-        }.getOrNull()
+        val engine = try {
+            borrowKokoro()
+        } catch (_: Exception) {
+            KokoroFiles.noteSpeakFailed()
+            return null
+        }
+        return try {
+            val audio = engine.generate(text, sid = 0, speed = speed)
+            val loud = audio.samples.any { abs(it) >= 0.001f }
+            if (audio.samples.isEmpty() || !loud) {
+                KokoroFiles.noteSpeakFailed()
+                null
+            } else {
+                KokoroFiles.clearSpeakNote()
+                trimSilence(audio.samples, audio.sampleRate) to audio.sampleRate
+            }
+        } catch (_: Exception) {
+            KokoroFiles.noteSpeakFailed()
+            null
+        } finally {
+            giveKokoro(engine)
+        }
+    }
+
+    private suspend fun borrowKokoro(): OfflineTts {
+        while (true) {
+            synchronized(poolGuard) {
+                val key = "$kokoroSize|$kokoroRun"
+                if (loadedKey == key) {
+                    poolFree.removeFirstOrNull()?.let { return it }
+                    if (poolAll.isEmpty()) {
+                        val first = buildKokoro(kokoroRun, 4)
+                        poolAll.add(first)
+                        return first
+                    }
+                } else if (poolAll.size == poolFree.size) {
+                    poolAll.forEach { runCatching { it.release() } }
+                    poolAll.clear()
+                    poolFree.clear()
+                    poolExtraFailed = false
+                    val first = buildKokoro(kokoroRun, 4)
+                    poolAll.add(first)
+                    loadedKey = key
+                    return first
+                }
+            }
+            if (!poolExtraFailed && synchronized(poolGuard) { poolAll.size < 2 && loadedKey == "$kokoroSize|$kokoroRun" }) {
+                val extra = runCatching { buildKokoro(kokoroRun, 4) }.getOrNull()
+                synchronized(poolGuard) {
+                    if (extra == null) {
+                        poolExtraFailed = true
+                    } else if (loadedKey != "$kokoroSize|$kokoroRun" || poolAll.size >= 2) {
+                        runCatching { extra.release() }
+                    } else {
+                        poolAll.add(extra)
+                        return extra
+                    }
+                }
+            }
+            delay(20)
+        }
     }
 
     private fun queueAhead(start: Int, speed: Float, token: Int) {

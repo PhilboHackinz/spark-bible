@@ -584,6 +584,7 @@ private fun VoiceSection(
     val palette = LocalPalette.current
     val packs by KokoroFiles.packs.collectAsStateWithLifecycle()
     val chipNote by KokoroFiles.chipNote.collectAsStateWithLifecycle()
+    val speakNote by KokoroFiles.speakNote.collectAsStateWithLifecycle()
     LaunchedEffect(Unit) { KokoroFiles.refresh(context) }
     var snapshot by remember { mutableStateOf(VoiceSnapshot()) }
     var look by remember { mutableStateOf(0) }
@@ -638,6 +639,7 @@ private fun VoiceSection(
                 showHear = false,
             )
             if (chipNote.isNotBlank()) Text(chipNote, color = palette.muted)
+            if (speakNote.isNotBlank()) Text(speakNote, color = palette.muted)
         }
         VoiceRow(
             title = "Phone default",
