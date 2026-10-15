@@ -28,10 +28,18 @@ import com.k2fsa.sherpa.onnx.OfflineTtsKokoroModelConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsModelConfig
 import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlin.math.abs
+
+private data class VerseMark(val frame: Int, val index: Int)
 
 class ListenService : Service(), TextToSpeech.OnInitListener {
     private var tts: TextToSpeech? = null
@@ -47,7 +55,16 @@ class ListenService : Service(), TextToSpeech.OnInitListener {
     private var engineId = ""
     private var useKokoro = false
     private var kokoro: OfflineTts? = null
-    private var track: AudioTrack? = null
+    private val kokoroLock = Mutex()
+    private var stream: AudioTrack? = null
+    private var streamRate = 0
+    private var framesQueued = 0
+    private var holdingBreath = false
+    private val verseMarks = ArrayList<VerseMark>()
+    private val audioLock = Any()
+    private var prefetch: Deferred<Pair<FloatArray, Int>?>? = null
+    private var prefetchIndex = -1
+    private var prefetchRate = 0f
     private var speakToken = 0
     private var boundEngine: String? = null
     private var currentText = ""
@@ -183,7 +200,25 @@ class ListenService : Service(), TextToSpeech.OnInitListener {
             }
             ACTION_EXTEND -> {
                 val lines = intent.getStringArrayListExtra(EXTRA_LINES).orEmpty()
-                if (lines.isNotEmpty()) verses = lines
+                if (lines.isEmpty()) return START_NOT_STICKY
+                verses = lines
+                val newTitle = intent.getStringExtra(EXTRA_TITLE)
+                if (!newTitle.isNullOrBlank()) {
+                    title = newTitle
+                    ListenBus.title.value = newTitle
+                }
+                val resumeAt = intent.getIntExtra(EXTRA_INDEX, -1)
+                if (resumeAt >= 0) {
+                    verseIndex = resumeAt.coerceIn(0, lines.lastIndex)
+                    playing = true
+                    ListenBus.playing.value = true
+                    ListenBus.error.value = false
+                    acquire()
+                    audioManager.requestAudioFocus(focusRequest)
+                    if (!ready) prepare(engineId)
+                    publishState()
+                    if (ready) speak() else pending = true
+                }
             }
         }
         return START_NOT_STICKY
@@ -269,9 +304,12 @@ class ListenService : Service(), TextToSpeech.OnInitListener {
     }
 
     private fun pauseInternal() {
+        val heard = if (useKokoro) heardIndex() else verseIndex
         playing = false
         pending = false
         speakToken += 1
+        if (useKokoro) verseIndex = heard
+        holdingBreath = false
         stopTrack()
         tts?.stop()
         ListenBus.playing.value = false
@@ -331,6 +369,7 @@ class ListenService : Service(), TextToSpeech.OnInitListener {
         playing = false
         pending = false
         speakToken += 1
+        holdingBreath = false
         stopTrack()
         tts?.stop()
         ListenBus.playing.value = false
@@ -385,45 +424,78 @@ class ListenService : Service(), TextToSpeech.OnInitListener {
             finishSpeech()
             return
         }
-        val index = verseIndex
         val token = ++speakToken
-        currentText = verses[index]
-        ListenBus.verse.value = index
+        val speed = rate
+        holdingBreath = false
+        stopTrack()
+        ListenBus.verse.value = verseIndex
         ListenBus.word.value = -1
         ListenBus.playing.value = true
         ListenBus.breath.value = false
         updateNotification()
         publishState()
-        scope.launch {
-            val audio = runCatching { kokoroEngine().generate(currentText, sid = 0, speed = rate) }.getOrNull()
-            if (token != speakToken || !playing || verseIndex != index) return@launch
-            if (audio == null) {
-                main.post {
-                    ListenBus.error.value = true
-                    pauseInternal()
-                }
-                return@launch
+        scope.launch { runKokoro(token, speed) }
+    }
+
+    private suspend fun runKokoro(token: Int, speed: Float) {
+        var index = verseIndex
+        while (token == speakToken && playing) {
+            if (index >= verses.size) {
+                awaitDrained(token)
+                if (token != speakToken || !playing) return
+                if (index >= verses.size) break
             }
-            playSamples(audio.samples, audio.sampleRate, token)
-            if (token != speakToken || !playing) return@launch
-            main.post {
-                if (token != speakToken || !playing) return@post
-                verseIndex += 1
-                if (verseIndex >= verses.size) {
-                    finishSpeech()
-                } else if (walking) {
-                    ListenBus.breath.value = true
-                    main.postDelayed({ if (playing) speak() }, 1600)
-                } else {
-                    main.postDelayed({ if (playing) speak() }, 220)
+            if (synchronized(audioLock) { framesQueued } > 0 && !gapBefore(token)) return
+            val clip = takeClip(index, speed, token) ?: run {
+                if (token == speakToken) {
+                    main.post {
+                        ListenBus.error.value = true
+                        pauseInternal()
+                    }
                 }
+                return
             }
+            if (token != speakToken || !playing) return
+            val startFrame = synchronized(audioLock) { framesQueued }
+            synchronized(audioLock) { verseMarks.add(VerseMark(startFrame, index)) }
+            if (!writeSamples(clip.first, clip.second, token)) return
+            verseIndex = index
+            queuePrefetch(index + 1, speed, token)
+            if (!walking && index + 1 < verses.size) awaitNearEnd(token, 280)
+            index += 1
+            verseIndex = index
         }
+        if (token != speakToken || !playing) return
+        stopTrack()
+        main.post {
+            if (token == speakToken && playing && verseIndex >= verses.size) finishSpeech()
+        }
+    }
+
+    private suspend fun gapBefore(token: Int): Boolean {
+        if (walking) {
+            awaitDrained(token)
+            if (token != speakToken || !playing) return false
+            holdingBreath = true
+            main.post {
+                if (token == speakToken && playing) {
+                    ListenBus.breath.value = true
+                    ListenBus.word.value = -1
+                }
+            }
+            delay(1600)
+            holdingBreath = false
+            if (token != speakToken || !playing) return false
+            main.post { if (token == speakToken) ListenBus.breath.value = false }
+            return true
+        }
+        return writeSilence(120, token)
     }
 
     private fun kokoroEngine(): OfflineTts {
         kokoro?.let { return it }
         val root = KokoroFiles.root(this) ?: error("Kokoro is not on this phone.")
+        val threads = Runtime.getRuntime().availableProcessors().coerceIn(2, 4)
         val created = OfflineTts(
             config = OfflineTtsConfig(
                 model = OfflineTtsModelConfig(
@@ -433,7 +505,7 @@ class ListenService : Service(), TextToSpeech.OnInitListener {
                         tokens = java.io.File(root, "tokens.txt").path,
                         dataDir = java.io.File(root, "espeak-ng-data").path,
                     ),
-                    numThreads = 2,
+                    numThreads = threads,
                 ),
             ),
         )
@@ -441,9 +513,49 @@ class ListenService : Service(), TextToSpeech.OnInitListener {
         return created
     }
 
-    private fun playSamples(samples: FloatArray, sampleRate: Int, token: Int) {
-        if (samples.isEmpty() || token != speakToken) return
-        val buffer = maxOf(samples.size, AudioTrack.getMinBufferSize(sampleRate, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_FLOAT))
+    private suspend fun synthesize(text: String, speed: Float): Pair<FloatArray, Int>? = kokoroLock.withLock {
+        if (text.isBlank()) return null
+        runCatching {
+            val audio = kokoroEngine().generate(text, sid = 0, speed = speed)
+            trimSilence(audio.samples, audio.sampleRate) to audio.sampleRate
+        }.getOrNull()
+    }
+
+    private fun queuePrefetch(index: Int, speed: Float, token: Int) {
+        if (index >= verses.size || token != speakToken) return
+        if (prefetchIndex == index && prefetchRate == speed && prefetch?.isActive == true) return
+        val text = verses[index]
+        prefetchIndex = index
+        prefetchRate = speed
+        prefetch = scope.async {
+            if (token != speakToken) null else synthesize(text, speed)
+        }
+    }
+
+    private suspend fun takeClip(index: Int, speed: Float, token: Int): Pair<FloatArray, Int>? {
+        val pending = prefetch
+        if (pending != null && prefetchIndex == index && prefetchRate == speed) {
+            prefetch = null
+            val ready = runCatching { pending.await() }.getOrNull()
+            if (token != speakToken) return null
+            if (ready != null) return ready
+        }
+        if (token != speakToken || index >= verses.size) return null
+        return synthesize(verses[index], speed)
+    }
+
+    private fun ensureStream(sampleRate: Int): AudioTrack? {
+        val existing = stream
+        if (existing != null && streamRate == sampleRate && existing.state == AudioTrack.STATE_INITIALIZED) {
+            return existing
+        }
+        releaseStream()
+        val min = AudioTrack.getMinBufferSize(
+            sampleRate,
+            AudioFormat.CHANNEL_OUT_MONO,
+            AudioFormat.ENCODING_PCM_FLOAT,
+        )
+        if (min <= 0) return null
         val player = AudioTrack.Builder()
             .setAudioAttributes(
                 AudioAttributes.Builder()
@@ -458,35 +570,118 @@ class ListenService : Service(), TextToSpeech.OnInitListener {
                     .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
                     .build(),
             )
-            .setBufferSizeInBytes(buffer * 4)
-            .setTransferMode(AudioTrack.MODE_STATIC)
+            .setBufferSizeInBytes(min * 2)
+            .setTransferMode(AudioTrack.MODE_STREAM)
             .build()
-        track = player
-        if (token != speakToken) {
-            player.release()
-            return
+        player.setPlaybackPositionUpdateListener(object : AudioTrack.OnPlaybackPositionUpdateListener {
+            override fun onMarkerReached(track: AudioTrack) {
+                publishHeard(track)
+                armNextMarker(track)
+            }
+
+            override fun onPeriodicNotification(track: AudioTrack) {
+                publishHeard(track)
+            }
+        }, main)
+        player.positionNotificationPeriod = (sampleRate / 8).coerceAtLeast(1)
+        if (tokenStill()) player.play()
+        stream = player
+        streamRate = sampleRate
+        return player
+    }
+
+    private fun tokenStill(): Boolean = playing
+
+    private fun publishHeard(player: AudioTrack) {
+        if (!playing || holdingBreath) return
+        val head = runCatching { player.playbackHeadPosition }.getOrDefault(0)
+        val index = synchronized(audioLock) { verseMarks.lastOrNull { it.frame <= head }?.index } ?: return
+        ListenBus.verse.value = index
+        ListenBus.word.value = -1
+    }
+
+    private fun armNextMarker(player: AudioTrack) {
+        val head = runCatching { player.playbackHeadPosition }.getOrDefault(0)
+        val next = synchronized(audioLock) { verseMarks.firstOrNull { it.frame > head }?.frame } ?: return
+        if (next > head) player.notificationMarkerPosition = next
+    }
+
+    private fun writeSamples(samples: FloatArray, sampleRate: Int, token: Int): Boolean {
+        if (samples.isEmpty() || token != speakToken) return false
+        val player = ensureStream(sampleRate) ?: return false
+        var offset = 0
+        while (offset < samples.size) {
+            if (token != speakToken || !playing) return false
+            val wrote = runCatching {
+                player.write(samples, offset, samples.size - offset, AudioTrack.WRITE_BLOCKING)
+            }.getOrDefault(-1)
+            if (wrote <= 0) return false
+            offset += wrote
         }
-        player.write(samples, 0, samples.size, AudioTrack.WRITE_BLOCKING)
-        player.play()
-        val frames = samples.size
-        val ms = (frames * 1000L / sampleRate).coerceAtLeast(1L)
-        try {
-            Thread.sleep(ms)
-        } catch (_: InterruptedException) {
-            return
+        synchronized(audioLock) { framesQueued += samples.size }
+        armNextMarker(player)
+        return token == speakToken && playing
+    }
+
+    private fun writeSilence(ms: Int, token: Int): Boolean {
+        val rate = streamRate.takeIf { it > 0 } ?: 24000
+        val count = (rate * ms / 1000).coerceAtLeast(1)
+        return writeSamples(FloatArray(count), rate, token)
+    }
+
+    private suspend fun awaitNearEnd(token: Int, leadMs: Int) {
+        awaitPlayback(token, leadMs)
+    }
+
+    private suspend fun awaitDrained(token: Int) {
+        awaitPlayback(token, 0)
+    }
+
+    private suspend fun awaitPlayback(token: Int, leadMs: Int) {
+        val rate = streamRate
+        if (rate <= 0) return
+        val leadFrames = rate * leadMs / 1000
+        val queuedNow = synchronized(audioLock) { framesQueued }
+        val headNow = synchronized(audioLock) {
+            stream?.let { runCatching { it.playbackHeadPosition }.getOrDefault(0) } ?: return
         }
-        if (track == player) {
-            player.stop()
-            player.release()
-            track = null
+        val remainMs = ((queuedNow - headNow).coerceAtLeast(0) * 1000L / rate) - leadMs
+        val deadline = System.currentTimeMillis() + remainMs.coerceAtLeast(0L) + 400L
+        while (token == speakToken && playing && System.currentTimeMillis() < deadline) {
+            val (head, queued) = synchronized(audioLock) {
+                val track = stream ?: return
+                val heard = runCatching { track.playbackHeadPosition }.getOrDefault(framesQueued)
+                heard to framesQueued
+            }
+            if (head >= queued - leadFrames) return
+            delay(30)
         }
     }
 
+    private fun heardIndex(): Int {
+        val player = stream ?: return verseIndex
+        val head = runCatching { player.playbackHeadPosition }.getOrDefault(0)
+        return synchronized(audioLock) { verseMarks.lastOrNull { it.frame <= head }?.index } ?: verseIndex
+    }
+
     private fun stopTrack() {
-        val player = track
-        track = null
+        prefetch?.cancel()
+        prefetch = null
+        prefetchIndex = -1
+        releaseStream()
+    }
+
+    private fun releaseStream() {
+        val player = synchronized(audioLock) {
+            framesQueued = 0
+            verseMarks.clear()
+            val current = stream
+            stream = null
+            current
+        }
         if (player == null) return
         runCatching {
+            player.setPlaybackPositionUpdateListener(null)
             player.pause()
             player.flush()
             player.release()
@@ -584,11 +779,13 @@ class ListenService : Service(), TextToSpeech.OnInitListener {
             )
         }
 
-        fun extend(context: Context, lines: List<String>) {
+        fun extend(context: Context, lines: List<String>, title: String, resumeAt: Int) {
             context.startService(
                 Intent(context, ListenService::class.java)
                     .setAction(ACTION_EXTEND)
-                    .putStringArrayListExtra(EXTRA_LINES, ArrayList(lines)),
+                    .putStringArrayListExtra(EXTRA_LINES, ArrayList(lines))
+                    .putExtra(EXTRA_TITLE, title)
+                    .putExtra(EXTRA_INDEX, resumeAt),
             )
         }
     }
@@ -599,4 +796,18 @@ private fun wordIndexAt(text: String, charStart: Int): Int {
     if (matches.isEmpty()) return 0
     val found = matches.indexOfFirst { charStart <= it.range.last }
     return if (found < 0) matches.lastIndex else found
+}
+
+private fun trimSilence(samples: FloatArray, sampleRate: Int): FloatArray {
+    if (samples.size < 8) return samples
+    val threshold = 0.012f
+    var start = 0
+    var end = samples.lastIndex
+    while (start < end && abs(samples[start]) < threshold) start++
+    while (end > start && abs(samples[end]) < threshold) end--
+    if (end - start < sampleRate / 20) return samples
+    val pad = sampleRate / 50
+    val from = (start - pad).coerceAtLeast(0)
+    val to = (end + pad).coerceAtMost(samples.lastIndex)
+    return if (from == 0 && to == samples.lastIndex) samples else samples.copyOfRange(from, to + 1)
 }

@@ -131,6 +131,26 @@ object Logic {
         return if (place.words.isBlank()) lines else lines + place.words
     }
 
+    /** Where listening should go after "A little more".
+     *  -1 keeps the current spot (still playing, or paused in the middle).
+     *  A zero-or-higher index starts at the new lines.
+     *  Null means this was not the passage being listened to. */
+    fun extendListen(
+        sameSession: Boolean,
+        playing: Boolean,
+        spokenIndex: Int,
+        oldLineCount: Int,
+        firstNewIndex: Int,
+        newLineCount: Int,
+    ): Int? {
+        if (!sameSession) return null
+        if (newLineCount <= oldLineCount) return null
+        if (firstNewIndex !in 0 until newLineCount) return null
+        if (playing) return -1
+        val finished = oldLineCount > 0 && spokenIndex >= oldLineCount - 1
+        return if (finished) firstNewIndex else -1
+    }
+
     fun greeting(hour: Int): String = when (hour) {
         in 0..4 -> "Still up? That's okay."
         in 5..11 -> "Good morning."

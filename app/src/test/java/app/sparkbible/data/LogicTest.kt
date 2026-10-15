@@ -110,4 +110,61 @@ class LogicTest {
         assertFalse(sql.contains("DELETE"))
         assertEquals(3, SparkMigrations.MIGRATION_2_3.endVersion)
     }
+
+    @Test
+    fun aLittleMoreContinuesInsteadOfRestarting() {
+        assertNull(
+            Logic.extendListen(
+                sameSession = false,
+                playing = false,
+                spokenIndex = 7,
+                oldLineCount = 8,
+                firstNewIndex = 8,
+                newLineCount = 16,
+            ),
+        )
+        assertEquals(
+            -1,
+            Logic.extendListen(
+                sameSession = true,
+                playing = true,
+                spokenIndex = 2,
+                oldLineCount = 8,
+                firstNewIndex = 8,
+                newLineCount = 16,
+            ),
+        )
+        assertEquals(
+            -1,
+            Logic.extendListen(
+                sameSession = true,
+                playing = false,
+                spokenIndex = 2,
+                oldLineCount = 8,
+                firstNewIndex = 8,
+                newLineCount = 16,
+            ),
+        )
+        assertEquals(
+            8,
+            Logic.extendListen(
+                sameSession = true,
+                playing = false,
+                spokenIndex = 7,
+                oldLineCount = 8,
+                firstNewIndex = 8,
+                newLineCount = 16,
+            ),
+        )
+        assertNull(
+            Logic.extendListen(
+                sameSession = true,
+                playing = false,
+                spokenIndex = 7,
+                oldLineCount = 8,
+                firstNewIndex = 8,
+                newLineCount = 8,
+            ),
+        )
+    }
 }

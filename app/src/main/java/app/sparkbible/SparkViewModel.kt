@@ -223,9 +223,23 @@ class SparkViewModel(app: Application) : AndroidViewModel(app) {
         val last = _stack.value.lastOrNull() as? Screen.Read ?: return
         if (Logic.lengthLocked(last.place.origin)) return
         viewModelScope.launch {
-            val place = withContext(Dispatchers.IO) { spark.repo.extend(last.place) }
+            val before = last.place
+            val place = withContext(Dispatchers.IO) { spark.repo.extend(before) }
             _stack.value = _stack.value.dropLast(1) + Screen.Read(place)
-            if (ListenBus.playing.value) ListenService.extend(spark, Logic.spokenLines(place))
+            val oldLines = Logic.spokenLines(before)
+            val newLines = Logic.spokenLines(place)
+            val resumeAt = Logic.extendListen(
+                sameSession = ListenBus.title.value == before.label,
+                playing = ListenBus.playing.value,
+                spokenIndex = ListenBus.verse.value,
+                oldLineCount = oldLines.size,
+                firstNewIndex = before.verses.size,
+                newLineCount = newLines.size,
+            )
+            if (resumeAt != null && newLines.isNotEmpty()) {
+                ListenBus.title.value = place.label
+                ListenService.extend(spark, newLines, place.label, resumeAt)
+            }
         }
     }
 

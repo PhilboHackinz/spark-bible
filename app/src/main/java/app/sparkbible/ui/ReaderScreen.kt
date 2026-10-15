@@ -81,11 +81,14 @@ fun ReaderScreen(vm: SparkViewModel, place: Place) {
     val listState = rememberLazyListState()
     var tools by rememberSaveable { mutableStateOf(false) }
     var sleepMinutes by rememberSaveable { mutableIntStateOf(0) }
-    var started by rememberSaveable(place.label) { mutableStateOf(false) }
+    val sessionKey = place.verses.firstOrNull()?.let {
+        "${place.origin}:${place.mode.name}:${it.pin.book}:${it.pin.chapter}:${it.pin.verse}"
+    } ?: place.label
+    var started by rememberSaveable(sessionKey) { mutableStateOf(false) }
     val active = title == place.label
     val style = readingStyle(settings)
 
-    LaunchedEffect(place.label) {
+    LaunchedEffect(sessionKey) {
         if (!started && place.mode != Mode.READ) {
             started = true
             ListenService.play(
