@@ -52,7 +52,7 @@ object KokoroFiles {
         val dir = dir(context, size)
         val direct = if (complete(dir)) dir else null
         if (direct != null) return direct
-        val found = dir.walkTopDown().firstOrNull { it.name == "model.onnx" }?.parentFile ?: return null
+        val found = dir.walkTopDown().firstOrNull { it.name == "model.onnx" || it.name == "model.int8.onnx" }?.parentFile ?: return null
         return if (complete(found)) found else null
     }
 
@@ -99,20 +99,42 @@ object KokoroFiles {
         packs.value = packs.value + (size to pack)
     }
 
+    fun model(root: File): File =
+        File(root, "model.int8.onnx").takeIf { it.isFile } ?: File(root, "model.onnx")
+
     private fun complete(dir: File): Boolean =
-        File(dir, "model.onnx").isFile &&
+        model(dir).isFile &&
             File(dir, "voices.bin").isFile &&
             File(dir, "tokens.txt").isFile &&
             File(dir, "espeak-ng-data").isDirectory
 
-    private fun downloadTo(url: String, dest: File, onProgress: (Float) -> Unit) {
-        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
-            setRequestProperty("User-Agent", "SparkBible")
-            instanceFollowRedirects = true
-            connectTimeout = 20_000
-            readTimeout = 60_000
+    private fun open(url: String): HttpURLConnection {
+        var current = url
+        repeat(5) {
+            val connection = (URL(current).openConnection() as HttpURLConnection).apply {
+                setRequestProperty("User-Agent", "SparkBible")
+                instanceFollowRedirects = false
+                connectTimeout = 30_000
+                readTimeout = 120_000
+            }
+            val code = connection.responseCode
+            if (code in 300..399) {
+                val next = connection.getHeaderField("Location") ?: error("The voice didn't download.")
+                connection.disconnect()
+                current = if (next.startsWith("http")) next else URL(URL(current), next).toString()
+                return@repeat
+            }
+            return connection
         }
-        if (connection.responseCode !in 200..299) error("The voice didn't download.")
+        error("The voice didn't download.")
+    }
+
+    private fun downloadTo(url: String, dest: File, onProgress: (Float) -> Unit) {
+        val connection = open(url)
+        if (connection.responseCode !in 200..299) {
+            connection.disconnect()
+            error("The voice didn't download.")
+        }
         connection.inputStream.use { input ->
             val total = connection.contentLengthLong.coerceAtLeast(0L)
             dest.outputStream().use { output ->
@@ -130,6 +152,7 @@ object KokoroFiles {
     }
 
     private fun extract(archive: File, dest: File) {
+        if (dest.exists()) dest.deleteRecursively()
         dest.mkdirs()
         val root = dest.canonicalFile
         BZip2CompressorInputStream(archive.inputStream().buffered()).use { compressed ->

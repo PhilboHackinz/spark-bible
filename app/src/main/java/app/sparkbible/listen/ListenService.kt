@@ -535,7 +535,7 @@ class ListenService : Service(), TextToSpeech.OnInitListener {
             config = OfflineTtsConfig(
                 model = OfflineTtsModelConfig(
                     kokoro = OfflineTtsKokoroModelConfig(
-                        model = java.io.File(root, "model.onnx").path,
+                        model = KokoroFiles.model(root).path,
                         voices = java.io.File(root, "voices.bin").path,
                         tokens = java.io.File(root, "tokens.txt").path,
                         dataDir = java.io.File(root, "espeak-ng-data").path,
