@@ -20,6 +20,8 @@ object SettingsCodec {
         put("reminderOn", settings.reminderOn)
         put("reminderTime", settings.reminderTime)
         put("seenIntro", settings.seenIntro)
+        put("kokoroSize", settings.kokoroSize)
+        put("kokoroRun", settings.kokoroRun)
     }.toString()
 
     fun decode(json: String?): Settings {
@@ -43,6 +45,8 @@ object SettingsCodec {
             reminderOn = stored.optBoolean("reminderOn", false),
             reminderTime = stored.optString("reminderTime", "08:30").ifBlank { "08:30" },
             seenIntro = stored.optBoolean("seenIntro", false),
+            kokoroSize = stored.optString("kokoroSize", "full").let { if (it == "small") "small" else "full" },
+            kokoroRun = stored.optString("kokoroRun", "cpu").let { if (it == "nnapi") "nnapi" else "cpu" },
             translation = stored.optString("translation", "web").let { id ->
                 val chosen = id.ifBlank { "web" }
                 if (Translations.all.any { it.id == chosen }) chosen else "web"

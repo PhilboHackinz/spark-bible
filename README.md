@@ -8,21 +8,21 @@ Spark Bible is a native Kotlin app (Jetpack Compose, Room, offline text). It is 
 
 Android 8 or newer.
 
-The [v1.8.1 release](https://github.com/PhilboHackinz/spark-bible/releases/tag/v1.8.1) has a signed APK. Download it, open it, and allow install from your browser or files app if Android asks. Installing over 1.8.0 keeps your garden, highlights, and place.
+The [v1.8.2 release](https://github.com/PhilboHackinz/spark-bible/releases/tag/v1.8.2) has a signed APK. Download it, open it, and allow install from your browser or files app if Android asks. Installing over 1.8.1 keeps your garden, highlights, and place.
 
 If you later install a build you made yourself, uninstall the release first. A build from source is signed with a different key.
 
 ## What it does
 
 - Energy check starts at one verse. A little more adds eight verses and, if you were listening, continues from there instead of starting over
-- Read, listen, or both. Phone voices highlight the verse as it is spoken. Kokoro highlights the verse, not each word, and does not pause between lines
+- Read, listen, or both. Phone voices highlight the verse as it is spoken. Kokoro highlights the verse, not each word, and prepares the next few lines ahead
 - Closing the app stops the voice
 - The screen stays awake while you are reading
 - A garden that sprouts and blooms, or a sky that forms shapes. Nothing resets. Finished books stand as mini books on a coffee table in the garden
 - If you are already in today's spark, Today does not show that same passage a second time
 - Daily spark widget opens today's verse. Reminders stay gentle
 - Translations on the phone, switchable in Settings. No online Bible connection
-- The phone's own voice is the default. Kokoro is optional and downloads only when you choose it (about 300 MB, once). RHVoice, eSpeak NG, or SherpaTTS still show up if they are installed
+- The phone's own voice is the default. Kokoro is optional: a full voice (about 300 MB) or a smaller voice, each downloaded only when you choose it. You can also choose the phone's main processor or its AI chip. RHVoice, eSpeak NG, or SherpaTTS still show up if they are installed
 - Settings can save a copy of your garden, highlights, and place, and bring that file back. No account
 
 Your place, highlights, and garden stay on the phone. There is no account.

@@ -62,6 +62,7 @@ import app.sparkbible.data.SparkCatalog
 import app.sparkbible.data.ThemePref
 import app.sparkbible.data.Translations
 import app.sparkbible.listen.KokoroFiles
+import app.sparkbible.listen.KokoroPack
 import app.sparkbible.listen.ListenService
 import app.sparkbible.listen.OpenVoices
 import app.sparkbible.listen.VoiceProbe
@@ -541,7 +542,7 @@ fun VoicesScreen(vm: SparkViewModel) {
                     .semantics { contentDescription = "Hear the current voice" }
                     .clip(RoundedCornerShape(14.dp))
                     .background(palette.sage)
-                    .clickable { hear(context, settings.speechRate, settings.voiceEngine, settings.voiceName) }
+                    .clickable { hear(context, settings.speechRate, settings.voiceEngine, settings.voiceName, settings.kokoroSize, settings.kokoroRun) }
                     .padding(horizontal = 18.dp, vertical = 12.dp),
             )
         }
@@ -551,7 +552,16 @@ fun VoicesScreen(vm: SparkViewModel) {
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp),
         ) {
-            VoiceSection(settings.voiceEngine, settings.voiceName, settings.speechRate, hearOnRows = false) { engine, voice ->
+            VoiceSection(
+                settings.voiceEngine,
+                settings.voiceName,
+                settings.speechRate,
+                settings.kokoroSize,
+                settings.kokoroRun,
+                hearOnRows = false,
+                onSize = { vm.chooseKokoroSize(it) },
+                onRun = { vm.chooseKokoroRun(it) },
+            ) { engine, voice ->
                 vm.updateSettings { it.copy(voiceEngine = engine, voiceName = voice) }
             }
         }
@@ -563,16 +573,18 @@ private fun VoiceSection(
     engine: String,
     voice: String,
     rate: Float,
+    kokoroSize: String,
+    kokoroRun: String,
     hearOnRows: Boolean = true,
+    onSize: (String) -> Unit,
+    onRun: (String) -> Unit,
     onPick: (String, String) -> Unit,
 ) {
     val context = LocalContext.current
     val palette = LocalPalette.current
-    val kokoroPhase by KokoroFiles.phase.collectAsStateWithLifecycle()
-    val kokoroProgress by KokoroFiles.progress.collectAsStateWithLifecycle()
-    val kokoroMessage by KokoroFiles.message.collectAsStateWithLifecycle()
+    val packs by KokoroFiles.packs.collectAsStateWithLifecycle()
+    val chipNote by KokoroFiles.chipNote.collectAsStateWithLifecycle()
     LaunchedEffect(Unit) { KokoroFiles.refresh(context) }
-    val kokoroReady = kokoroPhase == "ready"
     var snapshot by remember { mutableStateOf(VoiceSnapshot()) }
     var look by remember { mutableStateOf(0) }
     DisposableEffect(look) {
@@ -591,27 +603,48 @@ private fun VoiceSection(
         modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
     )
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        VoiceRow(
-            title = "Kokoro",
-            body = when {
-                kokoroReady -> "On this phone. One calm voice. It works with no signal."
-                kokoroPhase == "downloading" -> "Bringing it to this phone… ${(kokoroProgress * 100).toInt()}%"
-                kokoroPhase == "failed" -> kokoroMessage.ifBlank { "The voice didn't finish downloading. You can try again." }
-                else -> "A free voice. It downloads once, then stays on this phone."
-            },
-            selected = engine == KokoroFiles.ENGINE,
-            onSelect = {
-                if (kokoroReady) onPick(KokoroFiles.ENGINE, "Kokoro") else KokoroFiles.download(context)
-            },
-            onHear = { hear(context, rate, KokoroFiles.ENGINE, "Kokoro") },
-            showHear = hearOnRows && kokoroReady,
+        KokoroChoice(
+            title = "Kokoro, full voice",
+            pack = packs[KokoroFiles.FULL],
+            readyBody = "The fuller voice. It stays on this phone.",
+            idleBody = "The fuller voice. It downloads once, then stays on this phone.",
+            selected = engine == KokoroFiles.ENGINE && kokoroSize != KokoroFiles.SMALL,
+            onSelect = { onSize(KokoroFiles.FULL) },
         )
+        KokoroChoice(
+            title = "Kokoro, smaller voice",
+            pack = packs[KokoroFiles.SMALL],
+            readyBody = "The same Kokoro, a lighter copy. It may sound a little different.",
+            idleBody = "A lighter Kokoro. It downloads only if you choose it, and the full voice stays.",
+            selected = engine == KokoroFiles.ENGINE && kokoroSize == KokoroFiles.SMALL,
+            onSelect = { onSize(KokoroFiles.SMALL) },
+        )
+        if (KokoroFiles.chipAvailable()) {
+            Text("What speaks", color = palette.muted, modifier = Modifier.padding(top = 6.dp))
+            VoiceRow(
+                title = "Main processor",
+                body = "The usual way Kokoro speaks.",
+                selected = kokoroRun != KokoroFiles.NNAPI,
+                onSelect = { onRun(KokoroFiles.CPU) },
+                onHear = {},
+                showHear = false,
+            )
+            VoiceRow(
+                title = "AI chip",
+                body = "Lets this phone's AI chip speak. You can switch back.",
+                selected = kokoroRun == KokoroFiles.NNAPI,
+                onSelect = { onRun(KokoroFiles.NNAPI) },
+                onHear = {},
+                showHear = false,
+            )
+            if (chipNote.isNotBlank()) Text(chipNote, color = palette.muted)
+        }
         VoiceRow(
             title = "Phone default",
             body = "Whatever Android is set to use.",
             selected = engine.isBlank() && voice.isBlank(),
             onSelect = { onPick("", "") },
-            onHear = { hear(context, rate, "", "") },
+            onHear = { hear(context, rate, "", "", kokoroSize, kokoroRun) },
             showHear = hearOnRows,
         )
         if (!snapshot.ready) {
@@ -637,7 +670,7 @@ private fun VoiceSection(
                         body = item.detail,
                         selected = engine == item.engine && (voice == item.name || voice in item.aliases),
                         onSelect = { onPick(item.engine, item.name) },
-                        onHear = { hear(context, rate, item.engine, item.name) },
+                        onHear = { hear(context, rate, item.engine, item.name, kokoroSize, kokoroRun) },
                         showHear = hearOnRows,
                     )
                 }
@@ -697,7 +730,14 @@ private fun VoiceSection(
 private fun shortEngineLabel(label: String): String =
     if (label.contains("Google", ignoreCase = true)) "Google" else label
 
-private fun hear(context: android.content.Context, rate: Float, engine: String, voice: String) {
+private fun hear(
+    context: android.content.Context,
+    rate: Float,
+    engine: String,
+    voice: String,
+    kokoroSize: String,
+    kokoroRun: String,
+) {
     ListenService.play(
         context,
         listOf("Peace I leave with you. My peace I give to you."),
@@ -707,6 +747,35 @@ private fun hear(context: android.content.Context, rate: Float, engine: String, 
         "Voice sample",
         engine,
         voice,
+        0,
+        kokoroSize,
+        kokoroRun,
+    )
+}
+
+@Composable
+private fun KokoroChoice(
+    title: String,
+    pack: KokoroPack?,
+    readyBody: String,
+    idleBody: String,
+    selected: Boolean,
+    onSelect: () -> Unit,
+) {
+    val phase = pack?.phase ?: "idle"
+    VoiceRow(
+        title = title,
+        body = when (phase) {
+            "ready" -> readyBody
+            "downloading" -> "Bringing it to this phone… ${((pack?.progress ?: 0f) * 100).toInt()}%"
+            "failed" -> pack?.message?.ifBlank { "The voice didn't finish downloading. You can try again." }
+                ?: "The voice didn't finish downloading. You can try again."
+            else -> idleBody
+        },
+        selected = selected,
+        onSelect = onSelect,
+        onHear = {},
+        showHear = false,
     )
 }
 

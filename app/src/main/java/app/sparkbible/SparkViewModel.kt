@@ -17,6 +17,7 @@ import app.sparkbible.data.ProgressEntity
 import app.sparkbible.data.Settings
 import app.sparkbible.data.VersePin
 import app.sparkbible.data.Logic
+import app.sparkbible.listen.KokoroFiles
 import app.sparkbible.listen.ListenBus
 import app.sparkbible.listen.ListenService
 import app.sparkbible.remind.Reminder
@@ -279,6 +280,9 @@ class SparkViewModel(app: Application) : AndroidViewModel(app) {
                         place.label,
                         current.voiceEngine,
                         current.voiceName,
+                        0,
+                        current.kokoroSize,
+                        current.kokoroRun,
                     )
                 } else {
                     ListenService.stop(spark)
@@ -333,6 +337,58 @@ class SparkViewModel(app: Application) : AndroidViewModel(app) {
         } ?: return
         if (!vibrator.hasVibrator()) return
         vibrator.vibrate(VibrationEffect.createOneShot(18, 40))
+    }
+
+    fun chooseKokoroSize(size: String) {
+        val wanted = if (size == KokoroFiles.SMALL) KokoroFiles.SMALL else KokoroFiles.FULL
+        if (!KokoroFiles.ready(spark, wanted)) {
+            KokoroFiles.download(spark, wanted) { chooseKokoroSize(wanted) }
+            return
+        }
+        viewModelScope.launch {
+            spark.settings.update {
+                it.copy(kokoroSize = wanted, voiceEngine = KokoroFiles.ENGINE, voiceName = "Kokoro")
+            }
+            restartListening()
+        }
+    }
+
+    fun chooseKokoroRun(run: String) {
+        val wanted = if (run == KokoroFiles.NNAPI && KokoroFiles.chipAvailable()) KokoroFiles.NNAPI else KokoroFiles.CPU
+        viewModelScope.launch {
+            spark.settings.update { it.copy(kokoroRun = wanted) }
+            if (spark.settings.current().voiceEngine == KokoroFiles.ENGINE) restartListening()
+        }
+    }
+
+    private suspend fun restartListening() {
+        val current = spark.settings.current()
+        if (!ListenBus.playing.value) return
+        val place = (_stack.value.lastOrNull() as? Screen.Read)?.place
+        val lines = when {
+            place != null && ListenBus.title.value == place.label -> Logic.spokenLines(place)
+            ListenBus.title.value == "Voice sample" -> listOf("Peace I leave with you. My peace I give to you.")
+            else -> emptyList()
+        }
+        if (lines.isEmpty()) {
+            if (current.voiceEngine == KokoroFiles.ENGINE) {
+                ListenService.reload(spark, current.kokoroSize, current.kokoroRun)
+            }
+            return
+        }
+        ListenService.play(
+            spark,
+            lines,
+            ListenBus.verse.value.coerceIn(0, lines.lastIndex),
+            current.speechRate,
+            current.walking && ListenBus.title.value != "Voice sample",
+            ListenBus.title.value.ifBlank { place?.label ?: "Spark Bible" },
+            current.voiceEngine,
+            current.voiceName,
+            0,
+            current.kokoroSize,
+            current.kokoroRun,
+        )
     }
 
     fun updateSettings(block: (Settings) -> Settings) {

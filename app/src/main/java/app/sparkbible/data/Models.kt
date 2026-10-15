@@ -69,4 +69,6 @@ data class Settings(
     val reminderOn: Boolean = false,
     val reminderTime: String = "08:30",
     val seenIntro: Boolean = false,
+    val kokoroSize: String = "full",
+    val kokoroRun: String = "cpu",
 )

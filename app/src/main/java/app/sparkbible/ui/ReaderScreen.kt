@@ -101,6 +101,8 @@ fun ReaderScreen(vm: SparkViewModel, place: Place) {
                 settings.voiceEngine,
                 settings.voiceName,
                 sleepMinutes,
+                settings.kokoroSize,
+                settings.kokoroRun,
             )
         }
     }
@@ -282,6 +284,8 @@ fun ReaderScreen(vm: SparkViewModel, place: Place) {
                         settings.voiceEngine,
                         settings.voiceName,
                         sleepMinutes,
+                        settings.kokoroSize,
+                        settings.kokoroRun,
                     )
                 }) {
                     Icon(

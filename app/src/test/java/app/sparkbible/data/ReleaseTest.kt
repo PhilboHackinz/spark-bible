@@ -25,6 +25,8 @@ class ReleaseTest {
             reminderOn = true,
             reminderTime = "21:00",
             seenIntro = true,
+            kokoroSize = "small",
+            kokoroRun = "nnapi",
         )
         val stored = SettingsCodec.encode(settings)
         val back = SettingsCodec.decode(stored)
@@ -36,6 +38,8 @@ class ReleaseTest {
         val back = SettingsCodec.decode("""{"translation":"nlt","fontSize":20.5}""")
         assertEquals("web", back.translation)
         assertEquals(20.5f, back.fontSize)
+        assertEquals("full", back.kokoroSize)
+        assertEquals("cpu", back.kokoroRun)
     }
 
     @Test

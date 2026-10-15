@@ -62,10 +62,12 @@ class ListenService : Service(), TextToSpeech.OnInitListener {
     private var holdingBreath = false
     private val verseMarks = ArrayList<VerseMark>()
     private val audioLock = Any()
-    private var prefetch: Deferred<Pair<FloatArray, Int>?>? = null
-    private var prefetchIndex = -1
-    private var prefetchRate = 0f
     private var speakToken = 0
+    private var kokoroSize = KokoroFiles.FULL
+    private var kokoroRun = KokoroFiles.CPU
+    private var loadedKey: String? = null
+    private val ahead = HashMap<Int, Deferred<Pair<FloatArray, Int>?>>()
+    private var aheadRate = 0f
     private var boundEngine: String? = null
     private var currentText = ""
     private lateinit var session: MediaSessionCompat
@@ -173,6 +175,8 @@ class ListenService : Service(), TextToSpeech.OnInitListener {
                     val enginePkg = intent.getStringExtra(EXTRA_ENGINE) ?: ""
                     engineId = enginePkg
                     val sleepMinutes = intent.getIntExtra(EXTRA_SLEEP, 0)
+                    kokoroSize = if (intent.getStringExtra(EXTRA_KOKORO_SIZE) == KokoroFiles.SMALL) KokoroFiles.SMALL else KokoroFiles.FULL
+                    kokoroRun = if (intent.getStringExtra(EXTRA_KOKORO_RUN) == KokoroFiles.NNAPI) KokoroFiles.NNAPI else KokoroFiles.CPU
                     playing = true
                     ListenBus.title.value = title
                     ListenBus.playing.value = true
@@ -220,6 +224,20 @@ class ListenService : Service(), TextToSpeech.OnInitListener {
                     if (ready) speak() else pending = true
                 }
             }
+            ACTION_RELOAD -> {
+                kokoroSize = if (intent.getStringExtra(EXTRA_KOKORO_SIZE) == KokoroFiles.SMALL) KokoroFiles.SMALL else KokoroFiles.FULL
+                kokoroRun = if (intent.getStringExtra(EXTRA_KOKORO_RUN) == KokoroFiles.NNAPI) KokoroFiles.NNAPI else KokoroFiles.CPU
+                if (verses.isEmpty() || !playing) return START_NOT_STICKY
+                verseIndex = if (useKokoro) heardIndex() else verseIndex
+                useKokoro = engineId == KokoroFiles.ENGINE
+                if (useKokoro) ready = KokoroFiles.ready(this, kokoroSize)
+                if (useKokoro && !ready) {
+                    ListenBus.error.value = true
+                    pauseInternal()
+                    return START_NOT_STICKY
+                }
+                if (ready || useKokoro) speak() else pending = true
+            }
         }
         return START_NOT_STICKY
     }
@@ -251,7 +269,7 @@ class ListenService : Service(), TextToSpeech.OnInitListener {
             tts?.stop()
             tts?.shutdown()
             tts = null
-            ready = KokoroFiles.ready(this)
+            ready = KokoroFiles.ready(this, kokoroSize)
             if (!ready) {
                 ListenBus.error.value = true
                 ListenBus.playing.value = false
@@ -446,6 +464,7 @@ class ListenService : Service(), TextToSpeech.OnInitListener {
                 if (index >= verses.size) break
             }
             if (synchronized(audioLock) { framesQueued } > 0 && !gapBefore(token)) return
+            queueAhead(index, speed, token)
             val clip = takeClip(index, speed, token) ?: run {
                 if (token == speakToken) {
                     main.post {
@@ -460,7 +479,6 @@ class ListenService : Service(), TextToSpeech.OnInitListener {
             synchronized(audioLock) { verseMarks.add(VerseMark(startFrame, index)) }
             if (!writeSamples(clip.first, clip.second, token)) return
             verseIndex = index
-            queuePrefetch(index + 1, speed, token)
             if (!walking && index + 1 < verses.size) awaitNearEnd(token, 280)
             index += 1
             verseIndex = index
@@ -493,10 +511,27 @@ class ListenService : Service(), TextToSpeech.OnInitListener {
     }
 
     private fun kokoroEngine(): OfflineTts {
-        kokoro?.let { return it }
-        val root = KokoroFiles.root(this) ?: error("Kokoro is not on this phone.")
-        val threads = Runtime.getRuntime().availableProcessors().coerceIn(2, 4)
-        val created = OfflineTts(
+        val key = "$kokoroSize|$kokoroRun"
+        if (kokoro != null && loadedKey == key) return kokoro!!
+        kokoro?.release()
+        kokoro = null
+        loadedKey = null
+        val created = try {
+            buildKokoro(kokoroRun)
+        } catch (_: Exception) {
+            if (kokoroRun == KokoroFiles.CPU) throw IllegalStateException("Kokoro didn't start.")
+            kokoroRun = KokoroFiles.CPU
+            KokoroFiles.noteChipFellBack()
+            buildKokoro(KokoroFiles.CPU)
+        }
+        kokoro = created
+        loadedKey = "$kokoroSize|$kokoroRun"
+        return created
+    }
+
+    private fun buildKokoro(provider: String): OfflineTts {
+        val root = KokoroFiles.root(this, kokoroSize) ?: error("Kokoro is not on this phone.")
+        return OfflineTts(
             config = OfflineTtsConfig(
                 model = OfflineTtsModelConfig(
                     kokoro = OfflineTtsKokoroModelConfig(
@@ -505,12 +540,11 @@ class ListenService : Service(), TextToSpeech.OnInitListener {
                         tokens = java.io.File(root, "tokens.txt").path,
                         dataDir = java.io.File(root, "espeak-ng-data").path,
                     ),
-                    numThreads = threads,
+                    numThreads = 4,
+                    provider = provider,
                 ),
             ),
         )
-        kokoro = created
-        return created
     }
 
     private suspend fun synthesize(text: String, speed: Float): Pair<FloatArray, Int>? = kokoroLock.withLock {
@@ -521,24 +555,30 @@ class ListenService : Service(), TextToSpeech.OnInitListener {
         }.getOrNull()
     }
 
-    private fun queuePrefetch(index: Int, speed: Float, token: Int) {
-        if (index >= verses.size || token != speakToken) return
-        if (prefetchIndex == index && prefetchRate == speed && prefetch?.isActive == true) return
-        val text = verses[index]
-        prefetchIndex = index
-        prefetchRate = speed
-        prefetch = scope.async {
-            if (token != speakToken) null else synthesize(text, speed)
+    private fun queueAhead(start: Int, speed: Float, token: Int) {
+        if (start >= verses.size || token != speakToken) return
+        if (aheadRate != speed) {
+            dropAhead()
+            aheadRate = speed
+        }
+        val keep = start..(start + 2).coerceAtMost(verses.lastIndex)
+        ahead.keys.filter { it !in keep }.toList().forEach { ahead.remove(it)?.cancel() }
+        for (index in keep) {
+            val existing = ahead[index]
+            if (existing != null && (existing.isActive || existing.isCompleted)) continue
+            val text = verses[index]
+            ahead[index] = scope.async {
+                if (token != speakToken) null else synthesize(text, speed)
+            }
         }
     }
 
     private suspend fun takeClip(index: Int, speed: Float, token: Int): Pair<FloatArray, Int>? {
-        val pending = prefetch
-        if (pending != null && prefetchIndex == index && prefetchRate == speed) {
-            prefetch = null
-            val ready = runCatching { pending.await() }.getOrNull()
+        val pending = if (aheadRate == speed) ahead.remove(index) else null
+        if (pending != null) {
+            val readyClip = runCatching { pending.await() }.getOrNull()
             if (token != speakToken) return null
-            if (ready != null) return ready
+            if (readyClip != null) return readyClip
         }
         if (token != speakToken || index >= verses.size) return null
         return synthesize(verses[index], speed)
@@ -665,10 +705,14 @@ class ListenService : Service(), TextToSpeech.OnInitListener {
     }
 
     private fun stopTrack() {
-        prefetch?.cancel()
-        prefetch = null
-        prefetchIndex = -1
+        dropAhead()
         releaseStream()
+    }
+
+    private fun dropAhead() {
+        ahead.values.forEach { it.cancel() }
+        ahead.clear()
+        aheadRate = 0f
     }
 
     private fun releaseStream() {
@@ -727,6 +771,7 @@ class ListenService : Service(), TextToSpeech.OnInitListener {
         const val ACTION_COUNT = "app.sparkbible.COUNT"
         const val ACTION_SLEEP = "app.sparkbible.SLEEP"
         const val ACTION_EXTEND = "app.sparkbible.EXTEND"
+        const val ACTION_RELOAD = "app.sparkbible.RELOAD"
         const val EXTRA_LINES = "lines"
         const val EXTRA_RATE = "rate"
         const val EXTRA_WALKING = "walking"
@@ -735,6 +780,8 @@ class ListenService : Service(), TextToSpeech.OnInitListener {
         const val EXTRA_ENGINE = "engine"
         const val EXTRA_VOICE = "voice"
         const val EXTRA_SLEEP = "sleep"
+        const val EXTRA_KOKORO_SIZE = "kokoroSize"
+        const val EXTRA_KOKORO_RUN = "kokoroRun"
         const val CHANNEL = "spark_listen"
         private const val NOTIF = 42
 
@@ -748,6 +795,8 @@ class ListenService : Service(), TextToSpeech.OnInitListener {
             engine: String = "",
             voice: String = "",
             sleepMinutes: Int = 0,
+            kokoroSize: String = KokoroFiles.FULL,
+            kokoroRun: String = KokoroFiles.CPU,
         ) {
             val intent = Intent(context, ListenService::class.java).apply {
                 action = ACTION_PLAY
@@ -759,8 +808,19 @@ class ListenService : Service(), TextToSpeech.OnInitListener {
                 putExtra(EXTRA_ENGINE, engine)
                 putExtra(EXTRA_VOICE, voice)
                 putExtra(EXTRA_SLEEP, sleepMinutes)
+                putExtra(EXTRA_KOKORO_SIZE, kokoroSize)
+                putExtra(EXTRA_KOKORO_RUN, kokoroRun)
             }
             context.startForegroundService(intent)
+        }
+
+        fun reload(context: Context, kokoroSize: String, kokoroRun: String) {
+            context.startService(
+                Intent(context, ListenService::class.java)
+                    .setAction(ACTION_RELOAD)
+                    .putExtra(EXTRA_KOKORO_SIZE, kokoroSize)
+                    .putExtra(EXTRA_KOKORO_RUN, kokoroRun),
+            )
         }
 
         fun toggle(context: Context) {
